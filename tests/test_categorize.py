@@ -16,3 +16,35 @@ def test_category_rules_are_deterministic_and_unknown_reviews():
     unknown, _ = categorize_items(df.iloc[[0]])
     assert unknown.loc[0, "household_category"] == "Unknown_Review"
     assert bool(unknown.loc[0, "needs_review"])
+
+
+def test_search_override_beats_broad_keyword_rule():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    df.loc[0, ["asin", "sku", "upc", "item_description_raw", "item_description_normalized"]] = [
+        "",
+        "",
+        "",
+        "La Roche Posay Lipikar Skin Milk Lotion",
+        "la roche posay lipikar skin milk lotion",
+    ]
+
+    categorized, _ = categorize_items(df.iloc[[0]])
+
+    assert categorized.loc[0, "household_category"] == "Health_Personal_Care"
+    assert categorized.loc[0, "category_rule_id"] == "override:la_roche_posay_skin_milk"
+
+
+def test_broad_keyword_rule_still_matches_general_milk():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    df.loc[0, ["asin", "sku", "upc", "item_description_raw", "item_description_normalized"]] = [
+        "",
+        "",
+        "",
+        "Whole Milk One Gallon",
+        "whole milk one gallon",
+    ]
+
+    categorized, _ = categorize_items(df.iloc[[0]])
+
+    assert categorized.loc[0, "household_category"] == "Groceries"
+    assert categorized.loc[0, "category_rule_id"] == "kw:grocery"

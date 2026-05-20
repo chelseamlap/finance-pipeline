@@ -152,13 +152,16 @@ Edit `config/merchant_rules.yaml`. Categorization is deterministic:
 1. saved Firestore/Google Sheets mapping when Firestore is used
 2. exact SKU, ASIN, or UPC
 3. exact normalized item description
-4. keyword rules
-5. retailer fallback
-6. `Unknown_Review`
+4. search overrides for specific phrase combinations
+5. broad keyword rules
+6. retailer fallback
+7. `Unknown_Review`
 
 Categories must exist in `config/category_taxonomy.yaml`; new categories are never invented at runtime.
 
 Saved mappings are intended to prevent repeated categorization work. If `target:whole milk` is saved as `Groceries`, future matching rows reuse that decision before YAML keyword matching or any future LLM categorization step.
+
+Use `search_overrides` for specific exceptions that should beat broad keyword rules. For example, broad `milk` can map to `Groceries`, while `la roche posay` + `skin milk` can map to `Health_Personal_Care`.
 
 ## Reconciliation
 

@@ -59,8 +59,12 @@ def categorize_row(row: pd.Series, rules: dict, allowed: set[str], mapping_store
     if match:
         return _validated(match, allowed, "exact_description")
 
+    for rule in rules.get("search_overrides", []):
+        if _rule_matches_description(desc, rule):
+            return _validated(rule, allowed, "search_override")
+
     for rule in rules.get("keyword_rules", []):
-        if any(normalize_text(keyword) in desc for keyword in rule.get("keywords", [])):
+        if _rule_matches_description(desc, rule):
             return _validated(rule, allowed, "keyword")
 
     retailer = normalize_text(row.get("retailer", ""))
@@ -76,6 +80,29 @@ def _validated(rule: dict, allowed: set[str], confidence: str) -> tuple[str, str
     if category not in allowed:
         raise ValueError(f"Rule {rule.get('rule_id')} uses category outside taxonomy: {category}")
     return category, confidence, rule.get("rule_id", "")
+
+
+def _rule_matches_description(desc: str, rule: dict) -> bool:
+    if not desc:
+        return False
+    excluded = [normalize_text(keyword) for keyword in rule.get("exclude_keywords", [])]
+    if any(_contains_phrase(desc, keyword) for keyword in excluded):
+        return False
+
+    required = [normalize_text(keyword) for keyword in rule.get("all_keywords", [])]
+    if required and not all(_contains_phrase(desc, keyword) for keyword in required):
+        return False
+
+    keywords = [normalize_text(keyword) for keyword in rule.get("keywords", [])]
+    if keywords:
+        return any(_contains_phrase(desc, keyword) for keyword in keywords)
+    return bool(required)
+
+
+def _contains_phrase(desc: str, phrase: str) -> bool:
+    if not phrase:
+        return False
+    return f" {phrase} " in f" {desc} "
 
 
 def append_reason(existing: object, reason: str) -> str:

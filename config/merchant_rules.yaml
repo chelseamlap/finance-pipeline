@@ -20,6 +20,11 @@ exact_descriptions:
     category: Household
     rule_id: desc:paper_towels
 
+search_overrides:
+  - rule_id: override:la_roche_posay_skin_milk
+    category: Health_Personal_Care
+    all_keywords: ["la roche posay", "skin milk"]
+
 keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
