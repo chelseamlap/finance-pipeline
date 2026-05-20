@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .mappings import first_saved_mapping
 from .normalize import load_yaml, normalize_text, spending_class_for_retail_category
 
 
@@ -11,7 +12,7 @@ def taxonomy() -> set[str]:
     return set(load_yaml("category_taxonomy.yaml").get("categories", []))
 
 
-def categorize_items(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def categorize_items(df: pd.DataFrame, mapping_store=None) -> tuple[pd.DataFrame, pd.DataFrame]:
     if df.empty:
         return df, pd.DataFrame()
     rules = load_yaml("merchant_rules.yaml")
@@ -20,7 +21,7 @@ def categorize_items(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     coverage: dict[str, int] = {}
 
     for idx, row in out.iterrows():
-        category, confidence, rule_id = categorize_row(row, rules, allowed)
+        category, confidence, rule_id = categorize_row(row, rules, allowed, mapping_store)
         out.at[idx, "household_category"] = category
         out.at[idx, "spending_class"] = spending_class_for_retail_category(category)
         out.at[idx, "category_confidence"] = confidence
@@ -36,7 +37,17 @@ def categorize_items(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return out, coverage_df
 
 
-def categorize_row(row: pd.Series, rules: dict, allowed: set[str]) -> tuple[str, str, str]:
+def categorize_row(row: pd.Series, rules: dict, allowed: set[str], mapping_store=None) -> tuple[str, str, str]:
+    if mapping_store is not None:
+        mapping = first_saved_mapping(row.to_dict(), mapping_store)
+        if mapping:
+            category = mapping["category"]
+            if category not in allowed:
+                raise ValueError(f"Saved mapping {mapping['mapping_key']} uses category outside taxonomy: {category}")
+            confidence = mapping.get("confidence", "saved_mapping")
+            rule_id = f"saved:{mapping['mapping_type']}:{mapping['mapping_key']}"
+            return category, confidence, rule_id
+
     for field in ("sku", "asin", "upc"):
         value = str(row.get(field, "") or "").strip()
         match = rules.get("exact_identifiers", {}).get(field, {}).get(value)

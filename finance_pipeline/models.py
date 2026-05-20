@@ -28,6 +28,7 @@ class CanonicalTransaction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transaction_id: str
+    row_fingerprint: str = ""
     source: str = "simplifi"
     account: str = ""
     posted_date: date
@@ -46,8 +47,10 @@ class CanonicalRetailItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     item_id: str
+    row_fingerprint: str = ""
     source_adapter: str
     retailer: str
+    source_owner: str = ""
     order_id: str = ""
     receipt_id: str = ""
     transaction_date: date
@@ -86,6 +89,7 @@ class CanonicalRetailItem(BaseModel):
 
 TRANSACTION_COLUMNS = [
     "transaction_id",
+    "row_fingerprint",
     "source",
     "account",
     "posted_date",
@@ -102,8 +106,10 @@ TRANSACTION_COLUMNS = [
 
 RETAIL_ITEM_COLUMNS = [
     "item_id",
+    "row_fingerprint",
     "source_adapter",
     "retailer",
+    "source_owner",
     "order_id",
     "receipt_id",
     "transaction_date",

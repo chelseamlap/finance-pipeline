@@ -5,6 +5,9 @@ __pycache__/
 *.egg-info/
 data/rejected/*.rejected.csv
 data/processed/
+data/raw/**/*
+!data/raw/**/
+!data/raw/**/.gitkeep
 
 # macOS / editors
 .DS_Store

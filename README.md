@@ -43,6 +43,22 @@ finance_pipeline/
 
 Monthly outputs are written to `data/processed/YYYY-MM/`. Raw exports are never overwritten; rejected/debug files are written under `data/rejected/`.
 
+For real household runs, prefer keeping private exports outside the repo and using Google Cloud for durable state and analytics:
+
+```text
+/path/to/private-finance-folder/
+  exports/
+```
+
+Firestore is the operational state store for saved mappings, record fingerprints, and run state. BigQuery is the analytical table store for canonical transactions, retail items, reconciliation outputs, and reporting. Google Sheets should be used as the human review/output surface for mappings, review queues, and summaries.
+
+Google Cloud runs use Application Default Credentials from your local machine, for example:
+
+```bash
+gcloud auth application-default login
+gcloud config set project your-gcp-project
+```
+
 ## Setup
 
 ```bash
@@ -61,6 +77,8 @@ The pipeline has four intentionally simple stages:
 2. **Normalize:** dates, merchants, amounts, identifiers, and text fields are converted into stable local formats.
 3. **Categorize:** item-level retail rows are categorized only by YAML rules, in deterministic priority order.
 4. **Reconcile and export:** order totals are checked against source totals, retail orders are matched to Simplifi, and monthly CSVs are emitted.
+
+When Firestore and BigQuery options are provided, the pipeline upserts operational record state into Firestore and analytical tables into BigQuery using stable record identifiers and row fingerprints. This lets full-year OrderPro exports be reprocessed without treating old rows as new work.
 
 Canonical output files:
 
@@ -97,6 +115,26 @@ python -m finance_pipeline.cli run-month --month 2026-05
 python -m finance_pipeline.cli export --month 2026-05
 ```
 
+To persist state in Firestore and write analytical tables to BigQuery:
+
+```bash
+python -m finance_pipeline.cli run-month \
+  --month 2026-05 \
+  --firestore-project your-gcp-project \
+  --bigquery-project your-gcp-project \
+  --bigquery-dataset finance_pipeline
+```
+
+Saved mappings can be written directly to Firestore while the Google Sheets sync layer is being built:
+
+```bash
+python -m finance_pipeline.cli save-mapping \
+  --firestore-project your-gcp-project \
+  --type description \
+  --key "target:whole milk" \
+  --category Groceries
+```
+
 ## Adding an OrderPro Store
 
 Create a folder like `data/raw/orderpro/walmart/` and place OrderPro order-level and item-level exports inside it. Then run:
@@ -111,13 +149,16 @@ The parser infers the retailer from `--store` or the folder name, detects order 
 
 Edit `config/merchant_rules.yaml`. Categorization is deterministic:
 
-1. exact SKU, ASIN, or UPC
-2. exact normalized item description
-3. keyword rules
-4. retailer fallback
-5. `Unknown_Review`
+1. saved Firestore/Google Sheets mapping when Firestore is used
+2. exact SKU, ASIN, or UPC
+3. exact normalized item description
+4. keyword rules
+5. retailer fallback
+6. `Unknown_Review`
 
 Categories must exist in `config/category_taxonomy.yaml`; new categories are never invented at runtime.
+
+Saved mappings are intended to prevent repeated categorization work. If `target:whole milk` is saved as `Groceries`, future matching rows reuse that decision before YAML keyword matching or any future LLM categorization step.
 
 ## Reconciliation
 

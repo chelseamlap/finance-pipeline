@@ -5,10 +5,17 @@ from pathlib import Path
 
 import pandas as pd
 
+from finance_pipeline.identity import (
+    DuplicateOrdinalTracker,
+    infer_source_owner,
+    retail_identity_parts,
+    row_fingerprint,
+    stable_hash,
+)
 from finance_pipeline.loaders.generic import apply_aliases, read_tables, reject_rows, source_files, str_or_blank
 from finance_pipeline.loaders.retail_common import load_retail_items
 from finance_pipeline.models import CanonicalRetailItem, money
-from finance_pipeline.normalize import clean_string, normalize_merchant, normalize_text, parse_date, stable_id
+from finance_pipeline.normalize import clean_string, normalize_merchant, normalize_text, parse_date
 from finance_pipeline.reconcile import allocate_order_amounts
 
 LOGGER = logging.getLogger(__name__)
@@ -48,6 +55,7 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
     if not orders_df.empty and "order_id" in orders_df.columns:
         orders_df = orders_df[orders_df["order_id"].astype(str).str.strip() != ""].copy()
     item_rows: list[dict] = []
+    ordinals = DuplicateOrdinalTracker()
     for file, item_df in items:
         if "order_id" not in item_df.columns:
             reject_rows(item_df.to_dict("records"), file, "missing required columns: ['order_id']", Path("data/rejected"))
@@ -80,37 +88,44 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
                 tax = money(data.get("allocated_tax", "0"))
                 shipping = money(data.get("allocated_shipping", "0"))
                 fee = money(data.get("allocated_fee", "0"))
+                base = {
+                    "source_adapter": "orderpro",
+                    "retailer": retailer,
+                    "source_owner": infer_source_owner(file),
+                    "order_id": str_or_blank(data, "order_id"),
+                    "transaction_date": parse_date(transaction_date),
+                    "merchant_raw": merchant,
+                    "merchant_normalized": normalize_merchant(merchant),
+                    "item_description_raw": desc,
+                    "item_description_normalized": normalize_text(desc),
+                    "sku": str_or_blank(data, "sku"),
+                    "asin": str_or_blank(data, "asin"),
+                    "upc": str_or_blank(data, "upc"),
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "item_subtotal": subtotal,
+                    "item_discount": discount,
+                    "allocated_tax": tax,
+                    "allocated_shipping": shipping,
+                    "allocated_fee": fee,
+                    "allocated_total": subtotal - discount + tax + shipping + fee,
+                    "source_order_total": _optional_money(data, "source_order_total"),
+                    "source_tax_total": _optional_money(data, "source_tax_total"),
+                    "source_discount_total": _optional_money(data, "source_discount_total"),
+                    "source_shipping_total": _optional_money(data, "source_shipping_total"),
+                    "source_fee_total": _optional_money(data, "source_fee_total"),
+                    "source_grand_total": _optional_money(data, "source_grand_total"),
+                    "file_source": str(file),
+                    "import_batch_id": import_batch_id,
+                    "source_category_raw": str_or_blank(data, "source_category_raw"),
+                }
+                identity_parts = retail_identity_parts(base)
+                ordinal = ordinals.next(identity_parts)
                 item_rows.append(
                     CanonicalRetailItem(
-                        item_id=stable_id(["orderpro", retailer, data.get("order_id"), idx, desc, subtotal]),
-                        source_adapter="orderpro",
-                        retailer=retailer,
-                        order_id=str_or_blank(data, "order_id"),
-                        transaction_date=parse_date(transaction_date),
-                        merchant_raw=merchant,
-                        merchant_normalized=normalize_merchant(merchant),
-                        item_description_raw=desc,
-                        item_description_normalized=normalize_text(desc),
-                        sku=str_or_blank(data, "sku"),
-                        asin=str_or_blank(data, "asin"),
-                        upc=str_or_blank(data, "upc"),
-                        quantity=quantity,
-                        unit_price=unit_price,
-                        item_subtotal=subtotal,
-                        item_discount=discount,
-                        allocated_tax=tax,
-                        allocated_shipping=shipping,
-                        allocated_fee=fee,
-                        allocated_total=subtotal - discount + tax + shipping + fee,
-                        source_order_total=_optional_money(data, "source_order_total"),
-                        source_tax_total=_optional_money(data, "source_tax_total"),
-                        source_discount_total=_optional_money(data, "source_discount_total"),
-                        source_shipping_total=_optional_money(data, "source_shipping_total"),
-                        source_fee_total=_optional_money(data, "source_fee_total"),
-                        source_grand_total=_optional_money(data, "source_grand_total"),
-                        file_source=str(file),
-                        import_batch_id=import_batch_id,
-                        source_category_raw=str_or_blank(data, "source_category_raw"),
+                        item_id=stable_hash([*identity_parts, ordinal]),
+                        row_fingerprint=row_fingerprint(base, base.keys()),
+                        **base,
                     ).model_dump()
                 )
             except Exception as exc:

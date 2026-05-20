@@ -14,6 +14,7 @@ from .logging_config import configure_logging
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
 from .source_registry import load_source, reconciliation_config, registry
+from .storage import BigQueryAnalyticsStore, FirestoreStateStore
 
 app = typer.Typer(help="Deterministic personal finance retail parsing pipeline.")
 
@@ -43,10 +44,21 @@ def ingest(
 
 
 @app.command("run-month")
-def run_month(month: str = typer.Option(..., "--month")) -> None:
+def run_month(
+    month: str = typer.Option(..., "--month"),
+    firestore_project: Optional[str] = typer.Option(None, "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    bigquery_project: Optional[str] = typer.Option(None, "--bigquery-project", help="Google Cloud project for BigQuery analytics tables."),
+    bigquery_dataset: str = typer.Option("finance_pipeline", "--bigquery-dataset", help="BigQuery dataset for canonical tables."),
+    bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
+) -> None:
     import_batch_id = f"month-{month}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+    state_store = FirestoreStateStore(firestore_project, firestore_prefix) if firestore_project else None
+    analytics_store = (
+        BigQueryAnalyticsStore(bigquery_project, bigquery_dataset, bigquery_location) if bigquery_project else None
+    )
     transactions, items = _load_all_sources(import_batch_id)
-    categorized_items, coverage = categorize_items(items)
+    categorized_items, coverage = categorize_items(items, mapping_store=state_store)
     cfg = reconciliation_config()
     rec = reconcile(
         transactions,
@@ -55,7 +67,33 @@ def run_month(month: str = typer.Option(..., "--month")) -> None:
         amount_tolerance=Decimal(str(cfg.get("amount_tolerance", 0.03))),
     )
     write_month_outputs(month, Path("data/processed") / month, transactions, categorized_items, rec, coverage)
+    if state_store is not None:
+        state_store.upsert_transactions(transactions, import_batch_id)
+        state_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
+        state_store.close()
+    if analytics_store is not None:
+        analytics_store.upsert_transactions(transactions, import_batch_id)
+        analytics_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
+        for name, df in rec.items():
+            if name != "items":
+                analytics_store.write_table(name, df, import_batch_id)
+        analytics_store.write_table("category_rule_coverage", coverage, import_batch_id)
+        analytics_store.close()
     typer.echo(f"Wrote monthly outputs to data/processed/{month}")
+
+
+@app.command("save-mapping")
+def save_mapping(
+    mapping_type: str = typer.Option(..., "--type", help="Mapping type, for example asin, upc, sku, description, or merchant."),
+    mapping_key: str = typer.Option(..., "--key", help="Normalized mapping key."),
+    category: str = typer.Option(..., "--category"),
+    firestore_project: str = typer.Option(..., "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+) -> None:
+    store = FirestoreStateStore(firestore_project, firestore_prefix)
+    store.upsert_mapping(mapping_type, mapping_key, category, source="manual", confidence="manual", reviewed=True)
+    store.close()
+    typer.echo(f"Saved {mapping_type}:{mapping_key} -> {category}")
 
 
 @app.command()

@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import json
+from decimal import Decimal
+
+import pandas as pd
+
+
+class MemoryStateStore:
+    def __init__(self) -> None:
+        self.transactions: dict[str, dict] = {}
+        self.retail_items: dict[str, dict] = {}
+        self.category_mappings: dict[tuple[str, str], dict] = {}
+
+    def close(self) -> None:
+        return None
+
+    def upsert_transactions(self, df: pd.DataFrame, run_id: str) -> int:
+        return self._upsert(self.transactions, "transaction_id", df, run_id)
+
+    def upsert_retail_items(self, df: pd.DataFrame, run_id: str) -> int:
+        return self._upsert(self.retail_items, "item_id", df, run_id)
+
+    def upsert_mapping(
+        self,
+        mapping_type: str,
+        mapping_key: str,
+        category: str,
+        source: str,
+        confidence: str = "manual",
+        reviewed: bool = True,
+    ) -> None:
+        self.category_mappings[(mapping_type, mapping_key)] = {
+            "mapping_type": mapping_type,
+            "mapping_key": mapping_key,
+            "category": category,
+            "source": source,
+            "confidence": confidence,
+            "reviewed": reviewed,
+        }
+
+    def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
+        return self.category_mappings.get((mapping_type, mapping_key))
+
+    def _upsert(self, records: dict[str, dict], id_column: str, df: pd.DataFrame, run_id: str) -> int:
+        if df.empty:
+            return 0
+        for row in df.to_dict("records"):
+            record_id = str(row[id_column])
+            current = records.get(record_id, {})
+            records[record_id] = {
+                "record_id": record_id,
+                "row_fingerprint": str(row.get("row_fingerprint") or ""),
+                "payload": json.loads(json.dumps(row, default=_json_default)),
+                "first_seen_run_id": current.get("first_seen_run_id", run_id),
+                "last_seen_run_id": run_id,
+                "is_active": True,
+            }
+        return len(df)
+
+
+def _json_default(value: object) -> str:
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    return str(value)
