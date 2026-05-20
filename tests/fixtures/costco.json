@@ -1,0 +1,15 @@
+{
+  "receipts": [
+    {
+      "Purchase Date": "2026-05-05",
+      "Receipt ID": "COST-1",
+      "Item": "Chicken Breast",
+      "Quantity": "1",
+      "Price": "12.00",
+      "Item Total": "12.00",
+      "Tax Total": "1.07",
+      "Grand Total": "13.07",
+      "Retailer": "Costco Wholesale"
+    }
+  ]
+}

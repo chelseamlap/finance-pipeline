@@ -1,0 +1,3 @@
+Order Date,Amazon Order Id,Title,ASIN,Quantity,Unit Price,Item Subtotal,Order Tax,Order Total,Merchant
+2026-05-01,AMZ-1,Organic Bananas,B000COFFEE,2,5.00,10.00,0.98,15.98,Amazon.com
+2026-05-01,AMZ-1,USB Cable,B00USB,1,5.00,5.00,0.98,15.98,Amazon.com

@@ -1,0 +1,51 @@
+prefixes:
+  "01": Fixed Required
+  "02": Variable Required
+  "03": Discretionary
+  "04": Reimbursable
+  "05": One-Time Project
+
+administrative:
+  Transfer: Transfer
+  Credit Card Payment: Transfer
+  Balance Adjustment: Transfer
+  360 Checking: Excluded
+  Chase Freedom: Excluded
+  Joint WROS - TOD: Excluded
+  Main Savings: Excluded
+  Short/Medium Term Savings: Excluded
+  United CC: Excluded
+  USAA Rate Advantage Platinum Visa: Excluded
+  USAA Rewards CC: Excluded
+  Personal Income: Income
+  Bonus: Income
+  DCFSA reimbursement: Income
+  Dividend Income: Income
+  Interest Earned: Income
+  On-Call Pay: Income
+  Other Income: Income
+  Federal Tax: Tax
+  State Tax: Tax
+  College Savings: Savings
+  Uncategorized: Excluded
+  NA: Excluded
+  Cash & ATM: Excluded
+  Fees & Charges: Excluded
+  Charity & Donations: Excluded
+
+retail_categories:
+  Groceries: Variable Required
+  Restaurants_Takeout: Discretionary
+  Alcohol: Discretionary
+  Household: Variable Required
+  Kids: Variable Required
+  Health_Personal_Care: Variable Required
+  Home_Improvement: One-Time Project
+  Clothing: Discretionary
+  Pets: Variable Required
+  Gifts: One-Time Project
+  Electronics: Discretionary
+  Subscriptions: Fixed Required
+  Gas_Auto: Variable Required
+  Travel: One-Time Project
+  Unknown_Review: Review

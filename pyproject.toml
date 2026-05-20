@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finance-pipeline"
+version = "0.1.0"
+description = "Deterministic personal finance retail parsing and reconciliation pipeline."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2.2",
+  "pydantic>=2.6",
+  "typer>=0.12",
+  "pyyaml>=6.0",
+  "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+finance-pipeline = "finance_pipeline.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["finance_pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

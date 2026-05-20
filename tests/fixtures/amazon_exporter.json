@@ -1,0 +1,14 @@
+[
+  {
+    "orderDate": "2026-05-01",
+    "orderNumber": "AMZ-JSON-1",
+    "itemName": "Coffee Beans",
+    "ASIN": "B000COFFEE",
+    "itemQuantity": "1",
+    "itemPrice": "12.00",
+    "itemSubtotal": "12.00",
+    "taxTotal": "0.72",
+    "grandTotal": "12.72",
+    "store": "Amazon"
+  }
+]

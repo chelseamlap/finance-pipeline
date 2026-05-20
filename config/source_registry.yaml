@@ -1,0 +1,33 @@
+sources:
+  simplifi:
+    loader: finance_pipeline.loaders.simplifi
+    output: transactions
+    default_path: data/raw/simplifi/
+  amazon_order_history_reporter:
+    loader: finance_pipeline.loaders.amazon_order_history_reporter
+    output: retail_items
+    retailer: amazon
+    default_path: data/raw/amazon/amazon_order_history_reporter/
+  amazon_order_history_exporter:
+    loader: finance_pipeline.loaders.amazon_order_history_exporter
+    output: retail_items
+    retailer: amazon
+    default_path: data/raw/amazon/amazon_order_history_exporter/
+  costco_receipt_downloader:
+    loader: finance_pipeline.loaders.costco_receipt_downloader
+    output: retail_items
+    retailer: costco
+    default_path: data/raw/costco/costco_receipt_downloader/
+  target_manual:
+    loader: finance_pipeline.loaders.target_manual
+    output: retail_items
+    retailer: target
+    default_path: data/raw/target/manual/
+  orderpro:
+    loader: finance_pipeline.loaders.orderpro
+    output: retail_items
+    default_path: data/raw/orderpro/
+
+reconciliation:
+  date_window_days: 5
+  amount_tolerance: 0.03

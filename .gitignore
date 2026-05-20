@@ -1,0 +1,14 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+data/rejected/*.rejected.csv
+data/processed/
+
+# macOS / editors
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp

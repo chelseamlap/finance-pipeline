@@ -1,0 +1,4 @@
+Date,Payee,Amount,Category,Account,Notes,Transaction ID
+2026-05-03,Amazon Marketplace,-15.98,Shopping,Checking,,txn-amz-1
+2026-05-04,Target,-18.50,Shopping,Checking,,txn-tgt-1
+2026-05-05,Costco Wholesale,-13.07,Groceries,Visa,,txn-costco-1

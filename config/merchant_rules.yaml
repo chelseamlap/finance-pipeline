@@ -1,0 +1,70 @@
+exact_identifiers:
+  asin:
+    B000COFFEE:
+      category: Groceries
+      rule_id: asin:B000COFFEE
+  sku:
+    TGT-DIAPERS-1:
+      category: Kids
+      rule_id: sku:TGT-DIAPERS-1
+  upc:
+    "0001111041700":
+      category: Groceries
+      rule_id: upc:0001111041700
+
+exact_descriptions:
+  organic bananas:
+    category: Groceries
+    rule_id: desc:organic_bananas
+  paper towels:
+    category: Household
+    rule_id: desc:paper_towels
+
+keyword_rules:
+  - rule_id: kw:grocery
+    category: Groceries
+    keywords: ["strawberries", "banana", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "berries", "chicken"]
+  - rule_id: kw:restaurant
+    category: Restaurants_Takeout
+    keywords: ["restaurant", "pizza", "takeout", "doordash", "ubereats"]
+  - rule_id: kw:alcohol
+    category: Alcohol
+    keywords: ["wine", "beer", "liquor", "vodka", "whiskey", "tequila", "cabernet", "sauvignon", "prosecco"]
+  - rule_id: kw:household
+    category: Household
+    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "soap"]
+  - rule_id: kw:kids
+    category: Kids
+    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toy", "baby"]
+  - rule_id: kw:health
+    category: Health_Personal_Care
+    keywords: ["toothpaste", "shampoo", "vitamin", "lotion", "medicine"]
+  - rule_id: kw:home_improvement
+    category: Home_Improvement
+    keywords: ["paint", "screw", "hardware", "garden", "tool"]
+  - rule_id: kw:clothing
+    category: Clothing
+    keywords: ["shirt", "pants", "socks", "shoes", "jacket"]
+  - rule_id: kw:pets
+    category: Pets
+    keywords: ["dog food", "cat food", "pet", "litter"]
+  - rule_id: kw:gifts
+    category: Gifts
+    keywords: ["gift", "birthday", "wrapping"]
+  - rule_id: kw:electronics
+    category: Electronics
+    keywords: ["usb", "charger", "battery", "headphones", "cable"]
+  - rule_id: kw:subscription
+    category: Subscriptions
+    keywords: ["subscription", "membership"]
+  - rule_id: kw:auto
+    category: Gas_Auto
+    keywords: ["gasoline", "fuel", "motor oil", "wiper"]
+  - rule_id: kw:travel
+    category: Travel
+    keywords: ["hotel", "airline", "rental car", "flight"]
+
+retailer_fallbacks:
+  costco:
+    category: Groceries
+    rule_id: retailer:costco
