@@ -231,6 +231,8 @@ data/processed/YYYY-MM/items_needing_review.csv
 
 When source tax, shipping, fee, or discount exists only at the order level, the amount is allocated proportionally across positive item subtotals. The final row allocation absorbs penny rounding so the item sum reconciles to the source order value within tolerance.
 
+Before reporting category totals, the pipeline checks whether order-level components can coexist with the retailer charged total. If a source component, such as shipping, is present in the export but excluding it makes item totals tie exactly to the charged total, that component is left out of `allocated_total` and the item row records `component_allocation_notes`.
+
 If item-derived order totals still differ from the retailer charged total, the pipeline does not force category totals to match. Instead, `reconciliation_detail.csv` includes component totals and `mismatch_diagnostic` / `mismatch_basis` fields so the gap can be fixed from source-backed evidence, such as missing discounts, shipping treatment, tax allocation, split shipments, missing item rows, or duplicate item rows.
 
 ## Troubleshooting

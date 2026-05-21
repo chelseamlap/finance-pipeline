@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 
 from finance_pipeline.categorize import categorize_items
 from finance_pipeline.loaders import amazon_order_history_reporter, simplifi
@@ -67,7 +68,7 @@ def test_total_mismatch_can_still_match_simplifi_by_source_grand_total():
     assert rec["items"].iloc[0]["review_reason"] == "unknown category; total_mismatch: single_item_price_or_adjustment_mismatch"
 
 
-def test_total_mismatch_diagnoses_shipping_component_gap():
+def test_component_consistency_excludes_shipping_when_grand_total_matches_without_it():
     import pandas as pd
 
     transactions = pd.DataFrame(
@@ -107,8 +108,10 @@ def test_total_mismatch_diagnoses_shipping_component_gap():
     rec = reconcile(transactions, items)
     detail = rec["reconciliation_detail"].iloc[0]
 
-    assert detail["status"] == "total_mismatch"
+    assert detail["status"] == "ok"
+    assert detail["difference"] == 0
     assert detail["matched_simplifi_transaction_id"] == "txn-amz-shipping-gap"
-    assert detail["mismatch_diagnostic"] == "shipping_included_in_items_not_charge"
-    assert "allocated_shipping_total=2.24" in detail["mismatch_basis"]
-    assert rec["items"].iloc[0]["review_reason"] == "total_mismatch: shipping_included_in_items_not_charge"
+    assert rec["items"].iloc[0]["allocated_shipping"] == Decimal("0.00")
+    assert rec["items"].iloc[0]["allocated_total"] == Decimal("26.05")
+    assert "source_shipping_total_excluded" in rec["items"].iloc[0]["component_allocation_notes"]
+    assert not rec["items"].iloc[0]["needs_review"]
