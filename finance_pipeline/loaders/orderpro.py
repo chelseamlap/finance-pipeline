@@ -31,6 +31,8 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
     items: list[tuple[Path, pd.DataFrame]] = []
     for file in files:
         for raw in read_tables(file):
+            if _is_non_orderpro_tab(raw):
+                continue
             order_df = apply_aliases(raw.copy(), "orderpro_orders")
             item_df = apply_aliases(raw.copy(), "orderpro_items")
             is_order_report = {"order_id", "source_grand_total"}.issubset(set(order_df.columns)) and not (
@@ -68,16 +70,28 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
             try:
                 desc = str_or_blank(data, "item_description_raw")
                 transaction_date = data.get("transaction_date") or data.get("transaction_date_order")
+                order_id = str_or_blank(data, "order_id")
+                review_reasons: list[str] = []
+                if not desc:
+                    desc = _fallback_description(data)
+                    if desc:
+                        review_reasons.append("missing item description")
+                if not order_id:
+                    order_id = _fallback_order_id(retailer, data)
+                    if order_id:
+                        review_reasons.append("missing order id")
                 missing = [
                     name
                     for name, value in {
-                        "order_id": data.get("order_id"),
+                        "order_id": order_id,
                         "transaction_date": transaction_date,
                         "item_description_raw": desc,
                     }.items()
                     if not clean_string(value)
                 ]
                 if missing:
+                    if _is_summary_or_blank_row(data):
+                        continue
                     reject_rows([data], file, f"missing required columns: {missing}", Path("data/rejected"))
                     continue
                 merchant = str_or_blank(data, "merchant_raw") or retailer
@@ -92,7 +106,7 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
                     "source_adapter": "orderpro",
                     "retailer": retailer,
                     "source_owner": infer_source_owner(file),
-                    "order_id": str_or_blank(data, "order_id"),
+                    "order_id": order_id,
                     "transaction_date": parse_date(transaction_date),
                     "merchant_raw": merchant,
                     "merchant_normalized": normalize_merchant(merchant),
@@ -118,6 +132,8 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
                     "file_source": str(file),
                     "import_batch_id": import_batch_id,
                     "source_category_raw": str_or_blank(data, "source_category_raw"),
+                    "needs_review": bool(review_reasons),
+                    "review_reason": "; ".join(review_reasons),
                 }
                 identity_parts = retail_identity_parts(base)
                 ordinal = ordinals.next(identity_parts)
@@ -136,6 +152,68 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
     return df
 
 
+def _fallback_order_id(retailer: str, data: dict) -> str:
+    parts = [
+        "missing-order",
+        retailer,
+        data.get("transaction_date"),
+        data.get("sku"),
+        data.get("item_description_raw"),
+        data.get("item_subtotal"),
+        data.get("Tracking Number"),
+    ]
+    if not any(clean_string(part) for part in parts[2:]):
+        return ""
+    return f"missing-order:{stable_hash(parts, length=16)}"
+
+
+def _fallback_description(data: dict) -> str:
+    sku = clean_string(data.get("sku"))
+    category = clean_string(data.get("source_category_raw"))
+    if sku and category:
+        return f"Target item {sku} ({category})"
+    if sku:
+        return f"Target item {sku}"
+    return category
+
+
 def _optional_money(data: dict, key: str):
     value = clean_string(data.get(key))
     return money(value) if value else None
+
+
+def _is_non_orderpro_tab(raw: pd.DataFrame) -> bool:
+    if "source_tab_name" not in raw.columns or raw.empty:
+        return False
+    tab_name = normalize_text(raw["source_tab_name"].iloc[0])
+    return tab_name not in {"order history", "purchased items"}
+
+
+SUMMARY_ROW_LABELS = {"total items", "total quantity", "currency"}
+SUMMARY_ROW_IGNORED_VALUES = {"$", "usd"}
+
+
+def _is_summary_or_blank_row(data: dict) -> bool:
+    values = [
+        clean_string(value)
+        for key, value in data.items()
+        if clean_string(key) not in {"source_tab_name", "file_source"}
+    ]
+    nonempty = [value for value in values if value]
+    nonempty = [
+        value
+        for value in nonempty
+        if value.lower() not in SUMMARY_ROW_IGNORED_VALUES and normalize_text(value) not in SUMMARY_ROW_IGNORED_VALUES
+    ]
+    if not nonempty:
+        return True
+    if all(_is_number(value) for value in nonempty):
+        return True
+    normalized = {normalize_text(value) for value in nonempty}
+    if normalized and normalized.issubset(SUMMARY_ROW_LABELS):
+        return True
+    return False
+
+
+def _is_number(value: str) -> bool:
+    return value.replace(",", "").replace(".", "", 1).isdigit()

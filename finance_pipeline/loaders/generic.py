@@ -7,12 +7,13 @@ from typing import Iterable
 
 import pandas as pd
 
+from finance_pipeline.loaders.google_sheets_shortcut import read_google_sheet_tables
 from finance_pipeline.normalize import clean_string, load_yaml
 
 LOGGER = logging.getLogger(__name__)
 
 
-SUPPORTED_SUFFIXES = {".csv", ".json", ".xlsx", ".xls"}
+SUPPORTED_SUFFIXES = {".csv", ".json", ".xlsx", ".xls", ".gsheet"}
 HEADER_SCAN_ROWS = 25
 
 
@@ -28,6 +29,9 @@ def read_file(path: Path) -> pd.DataFrame:
         return pd.read_csv(path, dtype=str, keep_default_na=False)
     if suffix in {".xlsx", ".xls"}:
         tables = read_excel_tables(path)
+        return tables[0] if tables else pd.DataFrame()
+    if suffix == ".gsheet":
+        tables = read_google_sheet_tables(path)
         return tables[0] if tables else pd.DataFrame()
     if suffix == ".json":
         with path.open("r", encoding="utf-8") as handle:
@@ -45,6 +49,8 @@ def read_file(path: Path) -> pd.DataFrame:
 def read_tables(path: Path) -> list[pd.DataFrame]:
     if path.suffix.lower() in {".xlsx", ".xls"}:
         return read_excel_tables(path)
+    if path.suffix.lower() == ".gsheet":
+        return read_google_sheet_tables(path)
     return [read_file(path)]
 
 

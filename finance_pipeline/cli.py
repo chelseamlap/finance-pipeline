@@ -32,7 +32,10 @@ def ingest(
     output: Optional[Path] = typer.Option(None, "--output"),
 ) -> None:
     import_batch_id = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    df = load_source(source, path, import_batch_id, store)
+    try:
+        df = load_source(source, path, import_batch_id, store)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     if output is None:
         output_dir = Path("data/processed") / "ingested" / import_batch_id
         output_dir.mkdir(parents=True, exist_ok=True)

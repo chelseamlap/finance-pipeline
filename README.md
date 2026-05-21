@@ -52,12 +52,14 @@ For real household runs, prefer keeping private exports outside the repo and usi
 
 Firestore is the operational state store for saved mappings, record fingerprints, and run state. BigQuery is the analytical table store for canonical transactions, retail items, reconciliation outputs, and reporting. Google Sheets should be used as the human review/output surface for mappings, review queues, and summaries.
 
-Google Cloud runs use Application Default Credentials from your local machine, for example:
+Google Cloud runs and `.gsheet` shortcut imports use Application Default Credentials from your local machine, for example:
 
 ```bash
 gcloud auth application-default login
 gcloud config set project your-gcp-project
 ```
+
+The Google Sheets API must be enabled for dynamic `.gsheet` imports. The loader reads each spreadsheet tab through the Sheets API and treats each tab like a CSV table at runtime.
 
 ## Setup
 
