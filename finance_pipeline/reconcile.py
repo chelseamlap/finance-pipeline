@@ -51,7 +51,8 @@ def allocate_order_amounts(df: pd.DataFrame, tolerance: Decimal = Decimal("0.03"
         indices = list(group.index)
         positive_subtotals = [_dec(out.at[i, "item_subtotal"]) if _dec(out.at[i, "item_subtotal"]) > 0 else Decimal("0") for i in indices]
         base = sum(positive_subtotals, Decimal("0"))
-        effective_components, notes = _consistent_source_components(group, base, tolerance)
+        consistency_base = sum((_dec(out.at[i, "item_subtotal"]) for i in indices), Decimal("0")).quantize(TWOPLACES)
+        effective_components, notes = _consistent_source_components(group, consistency_base, tolerance)
 
         for component in ORDER_COST_COMPONENTS:
             source_total = effective_components.get(component.source_column)

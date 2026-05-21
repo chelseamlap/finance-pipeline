@@ -350,3 +350,59 @@ def test_negative_retailer_total_matches_simplifi_refund():
     assert detail["simplifi_amount"] == Decimal("21.78")
     assert detail["simplifi_reconciled_total"] == Decimal("-21.78")
     assert detail["retailer_vs_simplifi_difference"] == Decimal("0.00")
+
+
+def test_return_placeholder_reconciles_after_source_order_subtotal_override():
+    import pandas as pd
+
+    from finance_pipeline.dedupe import dedupe_retail_items
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-costco-return",
+                "posted_date": "2026-01-20",
+                "merchant_normalized": "costco",
+                "amount": 21.78,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "item_id": f"return-{idx}",
+                "retailer": "costco",
+                "order_id": "costco-return",
+                "source_adapter": "orderpro",
+                "transaction_date": "2026-01-20",
+                "merchant_normalized": "costco",
+                "item_description_normalized": "1899652",
+                "item_description_raw": "/1899652",
+                "quantity": 1,
+                "unit_price": 5.00,
+                "item_subtotal": 5.00,
+                "allocated_total": 5.00,
+                "source_order_total": -19.96,
+                "source_tax_total": -1.82,
+                "source_discount_total": 5.00,
+                "source_grand_total": -21.78,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            }
+            for idx in range(2)
+        ]
+    )
+
+    deduped = dedupe_retail_items(items)
+    rec = reconcile(transactions, deduped)
+    item = rec["items"].iloc[0]
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "ok"
+    assert detail["matched_simplifi_transaction_id"] == "txn-costco-return"
+    assert detail["item_derived_total"] == Decimal("-21.78")
+    assert item["item_subtotal"] == Decimal("-19.96")
+    assert item["item_discount"] == Decimal("0.00")
+    assert item["allocated_tax"] == Decimal("-1.82")
+    assert "source_discount_total_excluded" in item["component_allocation_notes"]

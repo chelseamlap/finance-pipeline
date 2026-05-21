@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pandas as pd
 
 from finance_pipeline.dedupe import dedupe_retail_items
@@ -153,3 +155,77 @@ def test_dedupe_retail_items_keeps_duplicate_count_that_matches_source_order_tot
     note = out.loc[out["item_id"] == "protein-0", "dedupe_notes"].iloc[0]
     assert "kept 2 of 4" in note
     assert "source_order_total" in note
+
+
+def test_dedupe_retail_items_sets_single_placeholder_item_to_source_order_total():
+    df = pd.DataFrame(
+        [
+            {
+                "item_id": "vet-1",
+                "retailer": "costco",
+                "order_id": "C-4",
+                "source_adapter": "orderpro",
+                "transaction_date": "2026-01-24",
+                "item_description_normalized": "vet rx",
+                "quantity": 2,
+                "unit_price": 1.00,
+                "item_subtotal": 1.00,
+                "allocated_total": 1.00,
+                "source_order_total": 21.78,
+                "source_grand_total": 21.78,
+            }
+        ]
+    )
+
+    out = dedupe_retail_items(df)
+
+    assert out["item_id"].tolist() == ["vet-1"]
+    assert out.loc[0, "item_subtotal"] == Decimal("21.78")
+    assert out.loc[0, "allocated_total"] == Decimal("21.78")
+    assert "item_subtotal set to source_order_total" in out.loc[0, "dedupe_notes"]
+
+
+def test_dedupe_retail_items_sets_single_return_placeholder_to_negative_source_order_total():
+    df = pd.DataFrame(
+        [
+            {
+                "item_id": "return-1",
+                "retailer": "costco",
+                "order_id": "C-5",
+                "source_adapter": "orderpro",
+                "transaction_date": "2026-01-20",
+                "item_description_normalized": "1899652",
+                "quantity": 1,
+                "unit_price": 5.00,
+                "item_subtotal": 5.00,
+                "allocated_total": 5.00,
+                "source_order_total": -19.96,
+                "source_tax_total": -1.82,
+                "source_discount_total": 5.00,
+                "source_grand_total": -21.78,
+            },
+            {
+                "item_id": "return-2",
+                "retailer": "costco",
+                "order_id": "C-5",
+                "source_adapter": "orderpro",
+                "transaction_date": "2026-01-20",
+                "item_description_normalized": "1899652",
+                "quantity": 1,
+                "unit_price": 5.00,
+                "item_subtotal": 5.00,
+                "allocated_total": 5.00,
+                "source_order_total": -19.96,
+                "source_tax_total": -1.82,
+                "source_discount_total": 5.00,
+                "source_grand_total": -21.78,
+            },
+        ]
+    )
+
+    out = dedupe_retail_items(df)
+
+    assert out["item_id"].tolist() == ["return-1"]
+    assert out.loc[0, "item_subtotal"] == Decimal("-19.96")
+    assert out.loc[0, "allocated_total"] == Decimal("-19.96")
+    assert "item_subtotal set to source_order_total" in out.loc[0, "dedupe_notes"]

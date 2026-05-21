@@ -86,14 +86,21 @@ def _collapse_same_order_duplicate_items(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     out = df.copy()
+    for money_column in ["item_subtotal", "allocated_total"]:
+        if money_column in out.columns:
+            out[money_column] = out[money_column].astype("object")
     keep_indices: list[int] = out.index[~orderpro_mask].tolist()
     duplicate_notes: dict[int, str] = {}
 
     orderpro = out.loc[orderpro_mask]
     for _, order_group in orderpro.groupby(["retailer", "order_id", "source_adapter"], dropna=False, sort=False):
-        selected, notes = _select_duplicate_multiplicity(order_group, existing_keys)
+        selected, notes, subtotal_overrides = _select_duplicate_multiplicity(order_group, existing_keys)
         keep_indices.extend(selected)
         duplicate_notes.update(notes)
+        for idx, subtotal in subtotal_overrides.items():
+            out.at[idx, "item_subtotal"] = subtotal
+            if "allocated_total" in out.columns:
+                out.at[idx, "allocated_total"] = subtotal
 
     out = out.loc[sorted(keep_indices)].copy()
     for idx, note in duplicate_notes.items():
@@ -101,7 +108,7 @@ def _collapse_same_order_duplicate_items(df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def _select_duplicate_multiplicity(order_group: pd.DataFrame, key_columns: list[str]) -> tuple[list[int], dict[int, str]]:
+def _select_duplicate_multiplicity(order_group: pd.DataFrame, key_columns: list[str]) -> tuple[list[int], dict[int, str], dict[int, Decimal]]:
     normalized_keys = order_group[key_columns].copy()
     for column in key_columns:
         normalized_keys[column] = normalized_keys[column].map(_dedupe_key_value)
@@ -113,10 +120,20 @@ def _select_duplicate_multiplicity(order_group: pd.DataFrame, key_columns: list[
         value_cents = _row_item_value_cents(order_group.loc[indices[0]])
         item_groups.append(DuplicateItemGroup(indices=indices, value_cents=value_cents))
 
-    if all(len(group.indices) == 1 for group in item_groups):
-        return order_group.index.tolist(), {}
-
     target_cents = _source_order_target_cents(order_group)
+    single_item_override = _single_item_source_total_override(item_groups, target_cents)
+    if single_item_override is not None:
+        selected_idx = item_groups[0].indices[0]
+        collapsed = len(item_groups[0].indices) - 1
+        note = (
+            f"deduped_duplicate_item_rows: kept 1 of {len(item_groups[0].indices)} duplicate row(s); "
+            f"collapsed {collapsed} duplicate row(s); item_subtotal set to source_order_total"
+        )
+        return [selected_idx], {selected_idx: note}, {selected_idx: _decimal_from_cents(single_item_override)}
+
+    if all(len(group.indices) == 1 for group in item_groups):
+        return order_group.index.tolist(), {}, {}
+
     selected_counts = _best_duplicate_counts(item_groups, target_cents)
 
     selected_indices: list[int] = []
@@ -130,7 +147,21 @@ def _select_duplicate_multiplicity(order_group: pd.DataFrame, key_columns: list[
                 f"deduped_duplicate_item_rows: kept {keep_count} of {len(item_group.indices)} "
                 f"duplicate row(s); collapsed {duplicate_count} duplicate row(s){target_note}"
             )
-    return selected_indices, notes
+    return selected_indices, notes, {}
+
+
+def _single_item_source_total_override(item_groups: list[DuplicateItemGroup], target_cents: int | None) -> int | None:
+    if target_cents is None or len(item_groups) != 1:
+        return None
+    group = item_groups[0]
+    best_existing = min(abs((group.value_cents * keep_count) - target_cents) for keep_count in range(1, len(group.indices) + 1))
+    if abs(target_cents) > 0 and best_existing > 3:
+        return target_cents
+    return None
+
+
+def _decimal_from_cents(cents: int) -> Decimal:
+    return (Decimal(cents) / Decimal(100)).quantize(Decimal("0.01"))
 
 
 def _best_duplicate_counts(item_groups: list[DuplicateItemGroup], target_cents: int | None) -> list[int]:
