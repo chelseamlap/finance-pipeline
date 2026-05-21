@@ -97,6 +97,7 @@ def reconcile(
         source_total = _dec(source_grand) if pd.notna(source_grand) and str(source_grand) != "" else None
         diff = (calc - source_total).quantize(TWOPLACES) if source_total is not None else Decimal("0.00")
         status = "ok" if source_total is None or abs(diff) <= amount_tolerance else "total_mismatch"
+        mismatch_diagnostic, mismatch_basis = _diagnose_total_mismatch(order, diff, amount_tolerance) if status == "total_mismatch" else ("", "")
 
         match_id = ""
         if not transactions.empty:
@@ -111,7 +112,10 @@ def reconcile(
         if "total_mismatch" in status or "unmatched_transaction" in status:
             mask = (items["retailer"] == order["retailer"]) & (items["order_id"] == order["order_id"])
             items.loc[mask, "needs_review"] = True
-            items.loc[mask, "review_reason"] = items.loc[mask, "review_reason"].apply(lambda value: append_reason(value, status))
+            reason = status
+            if mismatch_diagnostic:
+                reason = f"{reason}: {mismatch_diagnostic}"
+            items.loc[mask, "review_reason"] = items.loc[mask, "review_reason"].apply(lambda value: append_reason(value, reason))
 
         detail_rows.append(
             {
@@ -121,8 +125,21 @@ def reconcile(
                 "calculated_total": calc,
                 "source_grand_total": source_total,
                 "difference": diff,
+                "item_subtotal_total": order.get("item_subtotal_total"),
+                "item_discount_total": order.get("item_discount_total"),
+                "allocated_tax_total": order.get("allocated_tax_total"),
+                "allocated_shipping_total": order.get("allocated_shipping_total"),
+                "allocated_fee_total": order.get("allocated_fee_total"),
+                "source_order_total": order.get("source_order_total"),
+                "source_tax_total": order.get("source_tax_total"),
+                "source_discount_total": order.get("source_discount_total"),
+                "source_shipping_total": order.get("source_shipping_total"),
+                "source_fee_total": order.get("source_fee_total"),
+                "item_rows": order.get("item_rows"),
                 "matched_simplifi_transaction_id": match_id,
                 "status": status,
+                "mismatch_diagnostic": mismatch_diagnostic,
+                "mismatch_basis": mismatch_basis,
             }
         )
 
@@ -169,7 +186,7 @@ def _strip_reconciliation_reasons(value: object) -> str:
         return ""
     stale = {"total_mismatch", "unmatched_transaction"}
     parts = [part.strip() for part in text.split(";")]
-    return "; ".join(part for part in parts if part and part not in stale)
+    return "; ".join(part for part in parts if part and part not in stale and not part.startswith("total_mismatch:"))
 
 
 def _orders(items: pd.DataFrame) -> pd.DataFrame:
@@ -184,10 +201,81 @@ def _orders(items: pd.DataFrame) -> pd.DataFrame:
                 "transaction_date": pd.to_datetime(group["transaction_date"].iloc[0]).date(),
                 "merchant_normalized": group["merchant_normalized"].iloc[0],
                 "calculated_total": sum((_dec(v) for v in group["allocated_total"]), Decimal("0.00")).quantize(TWOPLACES),
+                "item_subtotal_total": _sum_column(group, "item_subtotal"),
+                "item_discount_total": _sum_column(group, "item_discount"),
+                "allocated_tax_total": _sum_column(group, "allocated_tax"),
+                "allocated_shipping_total": _sum_column(group, "allocated_shipping"),
+                "allocated_fee_total": _sum_column(group, "allocated_fee"),
+                "source_order_total": first_decimal(group, "source_order_total"),
+                "source_tax_total": first_decimal(group, "source_tax_total"),
+                "source_discount_total": first_decimal(group, "source_discount_total"),
+                "source_shipping_total": first_decimal(group, "source_shipping_total"),
+                "source_fee_total": first_decimal(group, "source_fee_total"),
                 "source_grand_total": first_decimal(group, "source_grand_total"),
+                "item_rows": len(group),
             }
         )
     return pd.DataFrame(rows)
+
+
+def _sum_column(group: pd.DataFrame, column: str) -> Decimal:
+    if column not in group.columns:
+        return Decimal("0.00")
+    return sum((_dec(value) for value in group[column]), Decimal("0.00")).quantize(TWOPLACES)
+
+
+def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, tolerance: Decimal) -> tuple[str, str]:
+    components = {
+        "tax": _dec(order.get("allocated_tax_total")),
+        "shipping": _dec(order.get("allocated_shipping_total")),
+        "fee": _dec(order.get("allocated_fee_total")),
+        "discount": _dec(order.get("item_discount_total")),
+    }
+    source_components = {
+        "tax": order.get("source_tax_total"),
+        "shipping": order.get("source_shipping_total"),
+        "fee": order.get("source_fee_total"),
+        "discount": order.get("source_discount_total"),
+    }
+    component_mismatches = []
+    for name, source_value in source_components.items():
+        if source_value is None or pd.isna(source_value):
+            continue
+        allocated = components[name]
+        source = abs(_dec(source_value)) if name == "discount" else _dec(source_value)
+        if abs(allocated - source) > tolerance:
+            component_mismatches.append(f"{name}_component_mismatch")
+
+    basis = "; ".join(
+        [
+            f"calculated_total={_dec(order.get('calculated_total'))}",
+            f"source_grand_total={_dec(order.get('source_grand_total'))}",
+            f"difference={difference}",
+            f"item_subtotal_total={_dec(order.get('item_subtotal_total'))}",
+            f"item_discount_total={_dec(order.get('item_discount_total'))}",
+            f"allocated_tax_total={components['tax']}",
+            f"allocated_shipping_total={components['shipping']}",
+            f"allocated_fee_total={components['fee']}",
+            f"item_rows={int(order.get('item_rows') or 0)}",
+        ]
+    )
+
+    if component_mismatches:
+        return "+".join(component_mismatches), basis
+    for name in ["shipping", "tax", "fee"]:
+        amount = components[name]
+        if amount and abs(abs(difference) - abs(amount)) <= tolerance:
+            direction = "included_in_items_not_charge" if difference > 0 else "missing_from_items"
+            return f"{name}_{direction}", basis
+    discount = components["discount"]
+    if discount and abs(abs(difference) - abs(discount)) <= tolerance:
+        direction = "over_applied" if difference < 0 else "missing_or_under_applied"
+        return f"discount_{direction}", basis
+    if int(order.get("item_rows") or 0) == 1:
+        return "single_item_price_or_adjustment_mismatch", basis
+    if difference > 0:
+        return "source_total_lower_than_item_components", basis
+    return "source_total_higher_than_item_components", basis
 
 
 def _match_transaction(

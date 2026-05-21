@@ -231,6 +231,8 @@ data/processed/YYYY-MM/items_needing_review.csv
 
 When source tax, shipping, fee, or discount exists only at the order level, the amount is allocated proportionally across positive item subtotals. The final row allocation absorbs penny rounding so the item sum reconciles to the source order value within tolerance.
 
+If item-derived order totals still differ from the retailer charged total, the pipeline does not force category totals to match. Instead, `reconciliation_detail.csv` includes component totals and `mismatch_diagnostic` / `mismatch_basis` fields so the gap can be fixed from source-backed evidence, such as missing discounts, shipping treatment, tax allocation, split shipments, missing item rows, or duplicate item rows.
+
 ## Troubleshooting
 
 - `ACCESS_TOKEN_SCOPE_INSUFFICIENT`: you are probably using user ADC from `gcloud auth application-default login`; use the service account key through `GOOGLE_APPLICATION_CREDENTIALS` instead.

@@ -62,4 +62,53 @@ def test_total_mismatch_can_still_match_simplifi_by_source_grand_total():
     assert detail["matched_simplifi_transaction_id"] == "txn-amz-source-total"
     assert rec["unmatched_retail_orders"].empty
     assert rec["unmatched_simplifi_transactions"].empty
-    assert rec["items"].iloc[0]["review_reason"] == "unknown category; total_mismatch"
+    assert detail["mismatch_diagnostic"] == "single_item_price_or_adjustment_mismatch"
+    assert "calculated_total=122.44" in detail["mismatch_basis"]
+    assert rec["items"].iloc[0]["review_reason"] == "unknown category; total_mismatch: single_item_price_or_adjustment_mismatch"
+
+
+def test_total_mismatch_diagnoses_shipping_component_gap():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-amz-shipping-gap",
+                "posted_date": "2026-04-29",
+                "merchant_normalized": "amazon",
+                "amount": -26.05,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "amazon",
+                "order_id": "order-shipping",
+                "transaction_date": "2026-04-27",
+                "merchant_normalized": "amazon",
+                "item_subtotal": 24.82,
+                "allocated_tax": 1.23,
+                "allocated_shipping": 2.24,
+                "allocated_fee": 0,
+                "item_discount": 0,
+                "allocated_total": 28.29,
+                "source_tax_total": 1.23,
+                "source_shipping_total": 2.24,
+                "source_discount_total": 0,
+                "source_grand_total": 26.05,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Home_Improvement",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "total_mismatch"
+    assert detail["matched_simplifi_transaction_id"] == "txn-amz-shipping-gap"
+    assert detail["mismatch_diagnostic"] == "shipping_included_in_items_not_charge"
+    assert "allocated_shipping_total=2.24" in detail["mismatch_basis"]
+    assert rec["items"].iloc[0]["review_reason"] == "total_mismatch: shipping_included_in_items_not_charge"
