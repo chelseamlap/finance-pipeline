@@ -11,6 +11,7 @@ import typer
 from .categorize import categorize_items
 from .export import write_month_outputs
 from .logging_config import configure_logging
+from .dedupe import dedupe_retail_items
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
 from .source_registry import load_source, reconciliation_config, registry
@@ -148,6 +149,7 @@ def _load_all_sources(import_batch_id: str) -> tuple[pd.DataFrame, pd.DataFrame]
 
     transactions = pd.concat(tx_frames, ignore_index=True) if tx_frames else pd.DataFrame(columns=TRANSACTION_COLUMNS)
     items = pd.concat(item_frames, ignore_index=True) if item_frames else pd.DataFrame(columns=RETAIL_ITEM_COLUMNS)
+    items = dedupe_retail_items(items)
     return transactions, items
 
 

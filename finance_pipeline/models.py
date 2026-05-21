@@ -70,6 +70,7 @@ class CanonicalRetailItem(BaseModel):
     allocated_fee: Decimal = Decimal("0")
     allocated_total: Decimal = Decimal("0")
     component_allocation_notes: str = ""
+    dedupe_notes: str = ""
     source_order_total: Optional[Decimal] = None
     source_tax_total: Optional[Decimal] = None
     source_discount_total: Optional[Decimal] = None
@@ -130,6 +131,7 @@ RETAIL_ITEM_COLUMNS = [
     "allocated_fee",
     "allocated_total",
     "component_allocation_notes",
+    "dedupe_notes",
     "source_order_total",
     "source_tax_total",
     "source_discount_total",
