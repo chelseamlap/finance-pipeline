@@ -107,3 +107,49 @@ def test_dedupe_retail_items_keeps_same_item_when_quantity_differs():
 
     assert out["item_id"].tolist() == ["one", "two"]
     assert out["dedupe_notes"].fillna("").eq("").all()
+
+
+def test_dedupe_retail_items_keeps_duplicate_count_that_matches_source_order_total():
+    rows = []
+    for i in range(4):
+        rows.append(
+            {
+                "item_id": f"protein-{i}",
+                "retailer": "costco",
+                "order_id": "C-3",
+                "source_adapter": "orderpro",
+                "transaction_date": "2026-01-20",
+                "item_description_normalized": "protein bars",
+                "quantity": 1,
+                "unit_price": 10.00,
+                "item_subtotal": 10.00,
+                "allocated_total": 10.00,
+                "source_order_total": 25.00,
+                "source_grand_total": 25.00,
+            }
+        )
+    rows.append(
+        {
+            "item_id": "eggs",
+            "retailer": "costco",
+            "order_id": "C-3",
+            "source_adapter": "orderpro",
+            "transaction_date": "2026-01-20",
+            "item_description_normalized": "eggs",
+            "quantity": 1,
+            "unit_price": 5.00,
+            "item_subtotal": 5.00,
+            "allocated_total": 5.00,
+            "source_order_total": 25.00,
+            "source_grand_total": 25.00,
+        }
+    )
+    df = pd.DataFrame(rows)
+
+    out = dedupe_retail_items(df)
+
+    assert out["item_id"].tolist() == ["protein-0", "protein-1", "eggs"]
+    assert out["item_subtotal"].sum() == 25.00
+    note = out.loc[out["item_id"] == "protein-0", "dedupe_notes"].iloc[0]
+    assert "kept 2 of 4" in note
+    assert "source_order_total" in note
