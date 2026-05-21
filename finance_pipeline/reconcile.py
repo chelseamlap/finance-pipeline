@@ -44,6 +44,7 @@ def allocate_order_amounts(df: pd.DataFrame, tolerance: Decimal = Decimal("0.03"
         out[col] = out[col].astype("object")
     if "component_allocation_notes" not in out.columns:
         out["component_allocation_notes"] = ""
+    out = _normalize_discount_amounts(out)
 
     group_keys = ["retailer", "order_id"]
     for keys, group in out.groupby(group_keys, dropna=False):
@@ -73,6 +74,23 @@ def allocate_order_amounts(df: pd.DataFrame, tolerance: Decimal = Decimal("0.03"
         lambda row: (_dec(row.get("item_subtotal")) - _dec(row.get("item_discount")) + _dec(row.get("allocated_tax")) + _dec(row.get("allocated_shipping")) + _dec(row.get("allocated_fee"))).quantize(TWOPLACES),
         axis=1,
     )
+    return out
+
+
+def _normalize_discount_amounts(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for column in ["item_discount", "source_discount_total"]:
+        if column not in out.columns:
+            continue
+        out[column] = out[column].astype("object")
+        for idx, value in out[column].items():
+            amount = _dec(value)
+            if amount < 0:
+                out.at[idx, column] = abs(amount).quantize(TWOPLACES)
+                out.at[idx, "component_allocation_notes"] = append_reason(
+                    out.at[idx, "component_allocation_notes"],
+                    f"{column}_normalized_to_positive_amount_to_subtract",
+                )
     return out
 
 
@@ -197,7 +215,8 @@ def reconcile(
         source_total = _dec(source_grand) if pd.notna(source_grand) and str(source_grand) != "" else None
         diff = (calc - source_total).quantize(TWOPLACES) if source_total is not None else Decimal("0.00")
         status = "ok" if source_total is None or abs(diff) <= amount_tolerance else "total_mismatch"
-        mismatch_diagnostic, mismatch_basis = _diagnose_total_mismatch(order, diff, amount_tolerance) if status == "total_mismatch" else ("", "")
+        base_difference = _base_difference_after_components(order, source_total) if source_total is not None else Decimal("0.00")
+        mismatch_diagnostic, mismatch_basis = _diagnose_total_mismatch(order, diff, base_difference, amount_tolerance) if status == "total_mismatch" else ("", "")
 
         match_id = ""
         if not transactions.empty:
@@ -225,6 +244,7 @@ def reconcile(
                 "calculated_total": calc,
                 "source_grand_total": source_total,
                 "difference": diff,
+                "base_difference_after_components": base_difference,
                 "item_subtotal_total": order.get("item_subtotal_total"),
                 "item_discount_total": order.get("item_discount_total"),
                 "allocated_tax_total": order.get("allocated_tax_total"),
@@ -324,7 +344,7 @@ def _sum_column(group: pd.DataFrame, column: str) -> Decimal:
     return sum((_dec(value) for value in group[column]), Decimal("0.00")).quantize(TWOPLACES)
 
 
-def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, tolerance: Decimal) -> tuple[str, str]:
+def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, base_difference: Decimal, tolerance: Decimal) -> tuple[str, str]:
     components = {
         "tax": _dec(order.get("allocated_tax_total")),
         "shipping": _dec(order.get("allocated_shipping_total")),
@@ -352,6 +372,8 @@ def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, tolerance: D
             f"source_grand_total={_dec(order.get('source_grand_total'))}",
             f"difference={difference}",
             f"item_subtotal_total={_dec(order.get('item_subtotal_total'))}",
+            f"expected_item_subtotal_after_components={(_dec(order.get('item_subtotal_total')) - base_difference).quantize(TWOPLACES)}",
+            f"base_difference_after_components={base_difference}",
             f"item_discount_total={_dec(order.get('item_discount_total'))}",
             f"allocated_tax_total={components['tax']}",
             f"allocated_shipping_total={components['shipping']}",
@@ -371,11 +393,28 @@ def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, tolerance: D
     if discount and abs(abs(difference) - abs(discount)) <= tolerance:
         direction = "over_applied" if difference < 0 else "missing_or_under_applied"
         return f"discount_{direction}", basis
+    if abs(base_difference) > tolerance:
+        if int(order.get("item_rows") or 0) == 1:
+            direction = "higher" if base_difference > 0 else "lower"
+            return f"single_item_base_{direction}_than_source_after_components", basis
+        direction = "higher" if base_difference > 0 else "lower"
+        return f"item_base_total_{direction}_than_source_after_components", basis
     if int(order.get("item_rows") or 0) == 1:
         return "single_item_price_or_adjustment_mismatch", basis
     if difference > 0:
         return "source_total_lower_than_item_components", basis
     return "source_total_higher_than_item_components", basis
+
+
+def _base_difference_after_components(order: pd.Series, source_total: Decimal) -> Decimal:
+    expected_base = (
+        source_total
+        + _dec(order.get("item_discount_total"))
+        - _dec(order.get("allocated_tax_total"))
+        - _dec(order.get("allocated_shipping_total"))
+        - _dec(order.get("allocated_fee_total"))
+    ).quantize(TWOPLACES)
+    return (_dec(order.get("item_subtotal_total")) - expected_base).quantize(TWOPLACES)
 
 
 def _match_transaction(

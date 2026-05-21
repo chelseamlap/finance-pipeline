@@ -63,9 +63,11 @@ def test_total_mismatch_can_still_match_simplifi_by_source_grand_total():
     assert detail["matched_simplifi_transaction_id"] == "txn-amz-source-total"
     assert rec["unmatched_retail_orders"].empty
     assert rec["unmatched_simplifi_transactions"].empty
-    assert detail["mismatch_diagnostic"] == "single_item_price_or_adjustment_mismatch"
+    assert detail["mismatch_diagnostic"] == "single_item_base_higher_than_source_after_components"
+    assert detail["base_difference_after_components"] == Decimal("24.30")
     assert "calculated_total=122.44" in detail["mismatch_basis"]
-    assert rec["items"].iloc[0]["review_reason"] == "unknown category; total_mismatch: single_item_price_or_adjustment_mismatch"
+    assert "base_difference_after_components=24.30" in detail["mismatch_basis"]
+    assert rec["items"].iloc[0]["review_reason"] == "unknown category; total_mismatch: single_item_base_higher_than_source_after_components"
 
 
 def test_component_consistency_excludes_shipping_when_grand_total_matches_without_it():
@@ -165,3 +167,93 @@ def test_component_consistency_chooses_matching_subset_from_multiple_components(
     assert item["allocated_shipping"] == Decimal("0.00")
     assert item["allocated_total"] == Decimal("23.00")
     assert "source_shipping_total_excluded" in item["component_allocation_notes"]
+
+
+def test_negative_item_discount_is_normalized_to_positive_amount_to_subtract():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-item-discount",
+                "posted_date": "2026-04-29",
+                "merchant_normalized": "target",
+                "amount": -15.00,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "target",
+                "order_id": "order-item-discount",
+                "transaction_date": "2026-04-27",
+                "merchant_normalized": "target",
+                "item_subtotal": 20.00,
+                "allocated_tax": 0,
+                "allocated_shipping": 0,
+                "allocated_fee": 0,
+                "item_discount": -5.00,
+                "allocated_total": 25.00,
+                "source_grand_total": 15.00,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    item = rec["items"].iloc[0]
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "ok"
+    assert item["item_discount"] == Decimal("5.00")
+    assert item["allocated_total"] == Decimal("15.00")
+    assert "item_discount_normalized_to_positive_amount_to_subtract" in item["component_allocation_notes"]
+
+
+def test_negative_source_discount_is_normalized_before_allocation():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-source-discount",
+                "posted_date": "2026-04-29",
+                "merchant_normalized": "target",
+                "amount": -15.00,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "target",
+                "order_id": "order-source-discount",
+                "transaction_date": "2026-04-27",
+                "merchant_normalized": "target",
+                "item_subtotal": 20.00,
+                "allocated_tax": 0,
+                "allocated_shipping": 0,
+                "allocated_fee": 0,
+                "item_discount": 0,
+                "allocated_total": 20.00,
+                "source_discount_total": -5.00,
+                "source_grand_total": 15.00,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    item = rec["items"].iloc[0]
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "ok"
+    assert item["source_discount_total"] == Decimal("5.00")
+    assert item["item_discount"] == Decimal("5.00")
+    assert item["allocated_total"] == Decimal("15.00")
+    assert "source_discount_total_normalized_to_positive_amount_to_subtract" in item["component_allocation_notes"]
