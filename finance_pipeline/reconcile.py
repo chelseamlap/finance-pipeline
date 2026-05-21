@@ -85,6 +85,7 @@ def reconcile(
     amount_tolerance: Decimal = Decimal("0.03"),
 ) -> dict[str, pd.DataFrame]:
     items = allocate_order_amounts(items, amount_tolerance) if not items.empty else items
+    items = _reset_reconciliation_review_state(items)
     detail_rows: list[dict] = []
     order_rows = _orders(items)
     matched_txn_ids: set[str] = set()
@@ -147,6 +148,30 @@ def reconcile(
     }
 
 
+def _reset_reconciliation_review_state(items: pd.DataFrame) -> pd.DataFrame:
+    if items.empty:
+        return items
+    out = items.copy()
+    if "review_reason" not in out.columns:
+        out["review_reason"] = ""
+    if "needs_review" not in out.columns:
+        out["needs_review"] = False
+    out["review_reason"] = out["review_reason"].apply(_strip_reconciliation_reasons)
+    category_needs_review = out.get("household_category", pd.Series("", index=out.index)).fillna("").eq("Unknown_Review")
+    has_reason = out["review_reason"].fillna("").astype(str).str.strip() != ""
+    out["needs_review"] = out["needs_review"].fillna(False) & (has_reason | category_needs_review)
+    return out
+
+
+def _strip_reconciliation_reasons(value: object) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text or text.lower() == "nan":
+        return ""
+    stale = {"total_mismatch", "unmatched_transaction"}
+    parts = [part.strip() for part in text.split(";")]
+    return "; ".join(part for part in parts if part and part not in stale)
+
+
 def _orders(items: pd.DataFrame) -> pd.DataFrame:
     if items.empty:
         return pd.DataFrame()
@@ -174,7 +199,8 @@ def _match_transaction(
 ) -> str:
     order_date = pd.to_datetime(order["transaction_date"])
     retailer = normalize_merchant(order.get("retailer", ""))
-    amount = abs(_dec(order["calculated_total"]))
+    match_total = order.get("source_grand_total")
+    amount = abs(_dec(match_total) if pd.notna(match_total) and str(match_total) != "" else _dec(order["calculated_total"]))
     candidates = transactions.copy()
     candidates["_date"] = pd.to_datetime(candidates["posted_date"])
     candidates["_amount_abs"] = candidates["amount"].apply(lambda value: abs(_dec(value)))

@@ -14,8 +14,8 @@ def test_write_month_outputs_filters_reconciliation_artifacts(tmp_path):
     )
     items = pd.DataFrame(
         [
-            {"item_id": "item-apr", "retailer": "target", "order_id": "order-apr", "transaction_date": "2026-04-30", "household_category": "Groceries", "allocated_total": 10, "needs_review": False},
-            {"item_id": "item-may", "retailer": "target", "order_id": "order-may", "transaction_date": "2026-05-02", "household_category": "Groceries", "allocated_total": 20, "needs_review": True},
+            {"item_id": "item-apr", "retailer": "target", "order_id": "order-apr", "transaction_date": "2026-04-30", "household_category": "Groceries", "allocated_total": 10, "needs_review": False, "category_rule_id": "rule-apr"},
+            {"item_id": "item-may", "retailer": "target", "order_id": "order-may", "transaction_date": "2026-05-02", "household_category": "Groceries", "allocated_total": 20, "needs_review": True, "category_rule_id": "rule-may"},
         ]
     )
     detail = pd.DataFrame(
@@ -32,7 +32,9 @@ def test_write_month_outputs_filters_reconciliation_artifacts(tmp_path):
         "items_needing_review": items[items["needs_review"]],
     }
 
-    write_month_outputs("2026-05", tmp_path, transactions, items, reconciliation, pd.DataFrame())
+    full_coverage = pd.DataFrame([{"category_rule_id": "rule-apr", "matched_rows": 1}, {"category_rule_id": "rule-may", "matched_rows": 1}])
+
+    write_month_outputs("2026-05", tmp_path, transactions, items, reconciliation, full_coverage)
 
     assert pd.read_csv(tmp_path / "canonical_transactions.csv")["transaction_id"].tolist() == ["tx-may"]
     assert pd.read_csv(tmp_path / "canonical_retail_items.csv")["item_id"].tolist() == ["item-may"]
@@ -40,6 +42,7 @@ def test_write_month_outputs_filters_reconciliation_artifacts(tmp_path):
     assert pd.read_csv(tmp_path / "unmatched_simplifi_transactions.csv")["transaction_id"].tolist() == ["tx-may"]
     assert pd.read_csv(tmp_path / "unmatched_retail_orders.csv")["order_id"].tolist() == ["order-may"]
     assert pd.read_csv(tmp_path / "items_needing_review.csv")["item_id"].tolist() == ["item-may"]
+    assert pd.read_csv(tmp_path / "category_rule_coverage.csv").to_dict("records") == [{"category_rule_id": "rule-may", "matched_rows": 1}]
 
     summary = dict(pd.read_csv(tmp_path / "reconciliation_summary.csv").values)
     assert summary == {

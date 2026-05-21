@@ -25,6 +25,7 @@ def write_month_outputs(
     unmatched_retail_orders = _filter_by_month(reconciliation.get("unmatched_retail_orders", pd.DataFrame()), "transaction_date", month)
     items_needing_review = _filter_by_month(reconciliation.get("items_needing_review", pd.DataFrame()), "transaction_date", month)
     reconciliation_summary = _reconciliation_summary(reconciliation_detail, items_needing_review)
+    monthly_rule_coverage = _category_rule_coverage(retail, category_rule_coverage)
 
     _write(tx, out_dir / "canonical_transactions.csv", TRANSACTION_COLUMNS)
     _write(retail, out_dir / "canonical_retail_items.csv", RETAIL_ITEM_COLUMNS)
@@ -35,7 +36,7 @@ def write_month_outputs(
     _write(unmatched_simplifi, out_dir / "unmatched_simplifi_transactions.csv")
     _write(unmatched_retail_orders, out_dir / "unmatched_retail_orders.csv")
     _write(items_needing_review, out_dir / "items_needing_review.csv")
-    _write(category_rule_coverage, out_dir / "category_rule_coverage.csv")
+    _write(monthly_rule_coverage, out_dir / "category_rule_coverage.csv")
 
 
 def _filter_by_month(df: pd.DataFrame, date_column: str, month: str) -> pd.DataFrame:
@@ -64,6 +65,26 @@ def _reconciliation_summary(detail: pd.DataFrame, items_needing_review: pd.DataF
             {"metric": "items_needing_review", "value": len(items_needing_review)},
         ]
     )
+
+
+def _category_rule_coverage(items: pd.DataFrame, fallback: pd.DataFrame) -> pd.DataFrame:
+    columns = ["category_rule_id", "matched_rows"]
+    if items.empty or "category_rule_id" not in items.columns:
+        if fallback.empty:
+            return pd.DataFrame(columns=columns)
+        return fallback.copy()
+    coverage = (
+        items["category_rule_id"]
+        .fillna("none")
+        .astype(str)
+        .replace("", "none")
+        .value_counts()
+        .rename_axis("category_rule_id")
+        .reset_index(name="matched_rows")
+        .sort_values("category_rule_id")
+        .reset_index(drop=True)
+    )
+    return coverage[columns]
 
 
 def _write(df: pd.DataFrame, path: Path, columns: list[str] | None = None) -> None:
