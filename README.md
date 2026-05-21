@@ -1,21 +1,21 @@
 # Finance Pipeline
 
-Deterministic monthly parsing for Simplifi transactions and item-level retail exports. The pipeline normalizes source files into canonical CSVs, categorizes item purchases with stable YAML rules, reconciles totals, and emits Google Sheets/dashboard-friendly monthly outputs.
+Deterministic local parsing for Simplifi transactions and item-level retail exports. The pipeline normalizes source files into canonical CSVs, categorizes item purchases with stable saved mappings and YAML rules, reconciles retail orders back to Simplifi transactions, and emits Google Sheets/dashboard-friendly monthly outputs.
 
 Accuracy and repeatability are the priority. The pipeline does not silently infer, drop, or hide money: malformed rows are rejected with source context, missing required fields produce warnings, and reconciliation differences are surfaced for review.
 
 ## Source Strategy
 
 - **Simplifi:** manual CSV export.
-- **Amazon:** Amazon Order History Reporter CSV first; Amazon Order History Exporter JSON/CSV fallback.
-- **Costco:** Costco Receipt Downloader JSON first.
+- **Amazon:** Amazon Order History Reporter CSVs first. If the same folder contains both order-level and item-level Reporter exports, the loader combines them so order totals can be allocated across item rows.
+- **OrderPro:** generic adapter for Target, Costco, Amazon, or any supported retailer under `data/raw/orderpro/{store}/`. Full-year OrderPro sheets are expected and safe to rerun.
+- **Costco:** Costco Receipt Downloader JSON fallback.
 - **Target:** OrderPro export first; manual Target files are supported as a fallback.
-- **OrderPro:** generic adapter for any supported retailer under `data/raw/orderpro/{store}/`.
 
 ## Folder Structure
 
 ```text
-finance_pipeline/
+finance-pipeline/
   config/
     category_taxonomy.yaml
     merchant_rules.yaml
@@ -33,74 +33,122 @@ finance_pipeline/
     processed/
     rejected/
   finance_pipeline/
-    loaders/
-    categorize.py
-    reconcile.py
-    export.py
   tests/
-    fixtures/
 ```
 
-Monthly outputs are written to `data/processed/YYYY-MM/`. Raw exports are never overwritten; rejected/debug files are written under `data/rejected/`.
+Monthly outputs are written to `data/processed/YYYY-MM/`. Raw exports, processed outputs, rejected rows, credentials, and other private data should stay uncommitted.
 
-For real household runs, prefer keeping private exports outside the repo and using Google Cloud for durable state and analytics:
+For real household runs, this repo can live locally while the durable state lives in Google Cloud:
 
-```text
-/path/to/private-finance-folder/
-  exports/
-```
+- **Firestore:** operational state for saved mappings, record fingerprints, and run state.
+- **BigQuery:** analytical tables for canonical transactions, retail items, reconciliation outputs, and reporting.
+- **Google Sheets:** human review/output surface for mappings, review queues, and summaries.
 
-Firestore is the operational state store for saved mappings, record fingerprints, and run state. BigQuery is the analytical table store for canonical transactions, retail items, reconciliation outputs, and reporting. Google Sheets should be used as the human review/output surface for mappings, review queues, and summaries.
+## First Setup
 
-Google Cloud runs and `.gsheet` shortcut imports use Application Default Credentials from your local machine, for example:
+Run these commands from the repo root:
 
 ```bash
-gcloud auth application-default login
-gcloud config set project your-gcp-project
-```
-
-The Google Sheets API must be enabled for dynamic `.gsheet` imports. The loader reads each spreadsheet tab through the Sheets API and treats each tab like a CSV table at runtime.
-
-## Setup
-
-```bash
-cd finance_pipeline
-python -m venv .venv
-. .venv/bin/activate
+cd /Users/chelsea.lapepeikis/Desktop/personal-repo/finance-pipeline
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
+pytest -q
 ```
 
-## Architecture
+Expected test result is currently `25 passed`.
 
-The pipeline has four intentionally simple stages:
+## Google Cloud Setup
 
-1. **Load:** source-specific adapters read CSV, JSON, or XLSX files, apply configured schema aliases, and emit canonical rows.
-2. **Normalize:** dates, merchants, amounts, identifiers, and text fields are converted into stable local formats.
-3. **Categorize:** item-level retail rows are categorized only by YAML rules, in deterministic priority order.
-4. **Reconcile and export:** order totals are checked against source totals, retail orders are matched to Simplifi, and monthly CSVs are emitted.
-
-When Firestore and BigQuery options are provided, the pipeline upserts operational record state into Firestore and analytical tables into BigQuery using stable record identifiers and row fingerprints. This lets full-year OrderPro exports be reprocessed without treating old rows as new work.
-
-Canonical output files:
+The Google Cloud project name and ID are both:
 
 ```text
-canonical_transactions.csv
-canonical_retail_items.csv
-monthly_category_summary.csv
-retailer_summary.csv
-reconciliation_summary.csv
-reconciliation_detail.csv
-unmatched_simplifi_transactions.csv
-unmatched_retail_orders.csv
-items_needing_review.csv
-category_rule_coverage.csv
+spending-pipeline
 ```
+
+Install and initialize `gcloud` if needed, then select the project:
+
+```bash
+gcloud config set project spending-pipeline
+```
+
+Enable the APIs used by the pipeline:
+
+```bash
+gcloud services enable sheets.googleapis.com firestore.googleapis.com bigquery.googleapis.com
+```
+
+Create or reuse the local service account:
+
+```bash
+gcloud iam service-accounts create finance-pipeline-local \
+  --display-name="Finance Pipeline Local"
+```
+
+Grant the roles needed for local pipeline runs:
+
+```bash
+gcloud projects add-iam-policy-binding spending-pipeline \
+  --member="serviceAccount:finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+
+gcloud projects add-iam-policy-binding spending-pipeline \
+  --member="serviceAccount:finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com" \
+  --role="roles/bigquery.dataEditor"
+
+gcloud projects add-iam-policy-binding spending-pipeline \
+  --member="serviceAccount:finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com" \
+  --role="roles/bigquery.jobUser"
+```
+
+Create a local key file:
+
+```bash
+mkdir -p ~/.config/finance-pipeline
+
+gcloud iam service-accounts keys create \
+  ~/.config/finance-pipeline/spending-pipeline-service-account.json \
+  --iam-account=finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com
+```
+
+Point Application Default Credentials-compatible libraries at that key:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/finance-pipeline/spending-pipeline-service-account.json"
+```
+
+To make that persistent for new terminal windows, append the same export to `~/.zshrc`:
+
+```bash
+printf '\nexport GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/finance-pipeline/spending-pipeline-service-account.json"\n' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Verify the file path, but do not run the JSON file as a command:
+
+```bash
+echo "$GOOGLE_APPLICATION_CREDENTIALS"
+test -f "$GOOGLE_APPLICATION_CREDENTIALS" && echo "credentials file found"
+```
+
+Share any Google Sheets or Drive folders that contain `.gsheet` shortcuts with this service account email:
+
+```text
+finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com
+```
+
+The loader reads `.gsheet` shortcuts through the Google Sheets API. The local `.gsheet` file only contains a spreadsheet ID; the actual spreadsheet must be shared with the service account.
 
 ## Monthly Workflow
 
-1. Put source exports into the matching `data/raw/...` folder.
-2. Ingest individual sources when you want to inspect them:
+1. Refresh or export source files into the matching `data/raw/...` folder.
+2. Run individual ingests when you want to inspect one source.
+3. Run the reporting month.
+4. Review reconciliation and category review files.
+5. Add saved mappings or YAML rules for recurring items.
+6. Commit only code/config/doc/test changes, never raw or processed household data.
+
+Smoke-test individual sources:
 
 ```bash
 python -m finance_pipeline.cli ingest --source simplifi --path data/raw/simplifi/
@@ -108,50 +156,36 @@ python -m finance_pipeline.cli ingest --source amazon_order_history_reporter --p
 python -m finance_pipeline.cli ingest --source amazon_order_history_exporter --path data/raw/amazon/amazon_order_history_exporter/
 python -m finance_pipeline.cli ingest --source costco_receipt_downloader --path data/raw/costco/costco_receipt_downloader/
 python -m finance_pipeline.cli ingest --source orderpro --store target --path data/raw/orderpro/target/
+python -m finance_pipeline.cli ingest --source orderpro --store costco --path data/raw/orderpro/costco/
+python -m finance_pipeline.cli ingest --source orderpro --store amazon --path data/raw/orderpro/amazon/
 ```
 
-3. Run the month:
+Run a month locally:
 
 ```bash
 python -m finance_pipeline.cli run-month --month 2026-05
 python -m finance_pipeline.cli export --month 2026-05
 ```
 
-To persist state in Firestore and write analytical tables to BigQuery:
+`run-month` means "produce outputs for this reporting month." It does not mean the raw imports are only that month. The loaders may read full-year files, which is expected for OrderPro. The export step filters monthly output files, reconciliation detail, unmatched files, and review queues back to the requested month.
+
+Run a month while persisting state to Firestore and analytics to BigQuery:
 
 ```bash
 python -m finance_pipeline.cli run-month \
   --month 2026-05 \
-  --firestore-project your-gcp-project \
-  --bigquery-project your-gcp-project \
+  --firestore-project spending-pipeline \
+  --bigquery-project spending-pipeline \
   --bigquery-dataset finance_pipeline
 ```
 
-Saved mappings can be written directly to Firestore while the Google Sheets sync layer is being built:
+The stable record identifiers and row fingerprints let full-year OrderPro exports be reprocessed without treating unchanged rows as new work.
 
-```bash
-python -m finance_pipeline.cli save-mapping \
-  --firestore-project your-gcp-project \
-  --type description \
-  --key "target:whole milk" \
-  --category Groceries
-```
+## Category Rules And Saved Mappings
 
-## Adding an OrderPro Store
+Edit `config/merchant_rules.yaml` for deterministic local categorization. Categorization priority is:
 
-Create a folder like `data/raw/orderpro/walmart/` and place OrderPro order-level and item-level exports inside it. Then run:
-
-```bash
-python -m finance_pipeline.cli ingest --source orderpro --store walmart --path data/raw/orderpro/walmart/
-```
-
-The parser infers the retailer from `--store` or the folder name, detects order and item reports by columns, joins them when possible, and preserves OrderPro category fields as `source_category_raw`. OrderPro categories are not used as household categories unless a future explicit rule enables that.
-
-## Adding Category Rules
-
-Edit `config/merchant_rules.yaml`. Categorization is deterministic:
-
-1. saved Firestore/Google Sheets mapping when Firestore is used
+1. saved Firestore mapping when Firestore is used
 2. exact SKU, ASIN, or UPC
 3. exact normalized item description
 4. search overrides for specific phrase combinations
@@ -161,11 +195,23 @@ Edit `config/merchant_rules.yaml`. Categorization is deterministic:
 
 Categories must exist in `config/category_taxonomy.yaml`; new categories are never invented at runtime.
 
-Saved mappings are intended to prevent repeated categorization work. If `target:whole milk` is saved as `Groceries`, future matching rows reuse that decision before YAML keyword matching or any future LLM categorization step.
+Saved mappings prevent repeated categorization work. If `target:whole milk` is saved as `Groceries`, future matching rows reuse that decision before YAML keyword matching or any future LLM categorization step.
 
-Use `search_overrides` for specific exceptions that should beat broad keyword rules. For example, broad `milk` can map to `Groceries`, while `la roche posay` + `skin milk` can map to `Health_Personal_Care`.
+Use search overrides for specific exceptions that should beat broad keyword rules. For example, broad `milk` can map to `Groceries`, while `la roche posay` plus `skin milk` can map to `Health_Personal_Care` or another intentional category.
+
+Save a mapping directly to Firestore:
+
+```bash
+python -m finance_pipeline.cli save-mapping \
+  --firestore-project spending-pipeline \
+  --type description \
+  --key "target:whole milk" \
+  --category Groceries
+```
 
 ## Reconciliation
+
+Simplifi is the source of truth for posted financial transactions. Retail exports explain what was inside those transactions. If those two stories disagree, the pipeline preserves the disagreement and asks for review instead of inventing a balancing row.
 
 The pipeline compares calculated order totals against source grand totals and matches retail orders to Simplifi transactions using:
 
@@ -173,22 +219,26 @@ The pipeline compares calculated order totals against source grand totals and ma
 - merchant/retailer match
 - amount tolerance, default `$0.03`
 
-Review files include unmatched transactions, unmatched retail orders, reconciliation detail, and item rows needing review.
+Review these files first:
+
+```text
+data/processed/YYYY-MM/reconciliation_summary.csv
+data/processed/YYYY-MM/reconciliation_detail.csv
+data/processed/YYYY-MM/unmatched_simplifi_transactions.csv
+data/processed/YYYY-MM/unmatched_retail_orders.csv
+data/processed/YYYY-MM/items_needing_review.csv
+```
 
 When source tax, shipping, fee, or discount exists only at the order level, the amount is allocated proportionally across positive item subtotals. The final row allocation absorbs penny rounding so the item sum reconciles to the source order value within tolerance.
 
-## Reconciliation Philosophy
-
-Simplifi is the source of truth for posted financial transactions. Retail exports explain what was inside those transactions. If those two stories disagree, the pipeline preserves the disagreement and asks for review instead of inventing a balancing row.
-
-Money should be explainable from a source file, a deterministic transformation, and a reconciliation result. This is why the system keeps `file_source`, `import_batch_id`, source totals, original retailer categories, rule IDs, and review reasons in the output.
-
 ## Troubleshooting
 
-- Check `data/rejected/` for files and rows that could not be parsed.
-- Check `items_needing_review.csv` for unknown categories or reconciliation issues.
-- Check `reconciliation_detail.csv` for order-level total differences.
-- Confirm source files contain recognizable headers listed in `config/retailer_schema_aliases.yaml`.
+- `ACCESS_TOKEN_SCOPE_INSUFFICIENT`: you are probably using user ADC from `gcloud auth application-default login`; use the service account key through `GOOGLE_APPLICATION_CREDENTIALS` instead.
+- `The caller does not have permission`: share the actual Google Sheet or containing Drive folder with `finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com`.
+- `This app is blocked`: avoid the OAuth app flow for this local pipeline and use the service account setup above.
+- `.gsheet` imports return zero rows: confirm the spreadsheet tabs have recognizable headers listed in `config/retailer_schema_aliases.yaml`.
+- Rejected rows appear in logs: check whether they are true data rows or footer/summary rows. Real data issues should be fixed in aliases or loaders, not by editing output CSVs.
+- Unknown categories: add exact identifiers, exact descriptions, or careful search overrides before broad keywords.
 
 ## What This Does Not Do
 

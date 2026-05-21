@@ -15,8 +15,7 @@ Expected:
 - Working tree is clean, except for intentional local raw data files.
 - The `finance_pipeline/` package directory exists.
 - `README.md`, `pyproject.toml`, `config/`, `data/`, and `tests/` exist at repo root.
-
-If `finance_pipeline/` files show as deleted, stop and resolve that before testing.
+- Real raw exports and processed outputs are not staged for commit.
 
 ## 2. Create Or Activate Environment
 
@@ -24,21 +23,40 @@ If `finance_pipeline/` files show as deleted, stop and resolve that before testi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-```
-
-Run baseline tests:
-
-```bash
 pytest -q
 ```
 
-Expected:
+Expected test result is currently:
 
 ```text
-10 passed
+25 passed
 ```
 
-## 3. Prepare Raw Data Carefully
+## 3. Confirm Google Auth
+
+The project name and ID are both `spending-pipeline`.
+
+```bash
+gcloud config set project spending-pipeline
+echo "$GOOGLE_APPLICATION_CREDENTIALS"
+test -f "$GOOGLE_APPLICATION_CREDENTIALS" && echo "credentials file found"
+```
+
+The credentials path should be:
+
+```text
+/Users/chelsea.lapepeikis/.config/finance-pipeline/spending-pipeline-service-account.json
+```
+
+Do not run the JSON file directly. It is read by Google client libraries.
+
+Share Google Sheets or containing Drive folders with:
+
+```text
+finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com
+```
+
+## 4. Prepare Raw Data Carefully
 
 Copy, do not move, source files into the matching folders:
 
@@ -53,11 +71,9 @@ data/raw/orderpro/walmart/
 data/raw/orderpro/costco/
 ```
 
-Keep original exports in `~/Documents/store exports` untouched.
+OrderPro full-year `.gsheet` files are expected. The monthly command will read the full-year source files and write month-scoped outputs.
 
-Do not put private raw export files into git.
-
-## 4. Smoke Test Each Source Individually
+## 5. Smoke Test Each Source Individually
 
 Run one source at a time and inspect row counts.
 
@@ -67,28 +83,40 @@ python -m finance_pipeline.cli ingest --source amazon_order_history_reporter --p
 python -m finance_pipeline.cli ingest --source amazon_order_history_exporter --path data/raw/amazon/amazon_order_history_exporter/
 python -m finance_pipeline.cli ingest --source costco_receipt_downloader --path data/raw/costco/costco_receipt_downloader/
 python -m finance_pipeline.cli ingest --source orderpro --store target --path data/raw/orderpro/target/
+python -m finance_pipeline.cli ingest --source orderpro --store costco --path data/raw/orderpro/costco/
+python -m finance_pipeline.cli ingest --source orderpro --store amazon --path data/raw/orderpro/amazon/
 ```
 
 For each run:
 
 - Confirm the command completes.
 - Confirm output row count is plausible.
-- Check `data/rejected/` for rejected rows.
+- Check whether warnings are footer/summary rows or real data issues.
 - If a whole file is rejected, inspect headers and update `config/retailer_schema_aliases.yaml`.
 
-## 5. Run A Single Month
+## 6. Run A Single Month
 
-Pick one month with known good coverage, for example:
+Pick one month with known good coverage:
 
 ```bash
-python -m finance_pipeline.cli run-month --month 2026-02
-python -m finance_pipeline.cli export --month 2026-02
+python -m finance_pipeline.cli run-month --month 2026-05
+python -m finance_pipeline.cli export --month 2026-05
+```
+
+With Google state and analytics enabled:
+
+```bash
+python -m finance_pipeline.cli run-month \
+  --month 2026-05 \
+  --firestore-project spending-pipeline \
+  --bigquery-project spending-pipeline \
+  --bigquery-dataset finance_pipeline
 ```
 
 Expected output folder:
 
 ```text
-data/processed/2026-02/
+data/processed/2026-05/
 ```
 
 Expected files:
@@ -106,7 +134,7 @@ items_needing_review.csv
 category_rule_coverage.csv
 ```
 
-## 6. Review Reconciliation Before Trusting Categories
+## 7. Review Reconciliation Before Trusting Categories
 
 Start with money, not category labels.
 
@@ -126,9 +154,9 @@ Check:
 - Are unmatched Simplifi transactions actually unrelated to itemized exports?
 - Are refunds or returns represented as negative rows where possible?
 
-Do not fix reconciliation by editing output CSVs. Fix loaders, aliases, or raw source placement.
+Do not fix reconciliation by editing output CSVs. Fix loaders, aliases, source placement, or reconciliation rules.
 
-## 7. Review Items Needing Category Work
+## 8. Review Items Needing Category Work
 
 Open:
 
@@ -141,7 +169,8 @@ For unknown items:
 
 - Add exact SKU/ASIN/UPC rules when stable identifiers exist.
 - Add exact normalized description rules for recurring known products.
-- Add keyword rules only when the keyword is safe and specific.
+- Add search overrides when a specific phrase should beat a broad keyword.
+- Add broad keyword rules only when the keyword is safe.
 - Do not add new household categories unless the taxonomy is intentionally changed.
 
 After YAML edits:
@@ -150,17 +179,6 @@ After YAML edits:
 pytest -q
 python -m finance_pipeline.cli run-month --month YYYY-MM
 ```
-
-## 8. Validate Google Sheets Outputs
-
-Before connecting dashboards:
-
-- Open `canonical_transactions.csv`.
-- Open `canonical_retail_items.csv`.
-- Confirm column names match README/canonical schema.
-- Confirm amounts are signed and formatted as expected.
-- Confirm `file_source` and `import_batch_id` are populated.
-- Confirm `source_category_raw` is preserved but not used as final category.
 
 ## 9. Commit Only Code And Config Changes
 
@@ -182,6 +200,7 @@ Do not commit:
 - Real raw exports
 - Processed monthly CSVs
 - Rejected debug CSVs
+- Service account JSON keys
 - `.venv`
 - `.DS_Store`
 
@@ -191,7 +210,8 @@ The first run is successful when:
 
 - `pytest -q` passes.
 - A chosen month produces all expected CSV outputs.
+- Month output files only contain the requested month.
 - Reconciliation differences are either zero or explicitly explained in review files.
 - No rows disappear without either canonical output or rejected output.
 - Unknown categories are visible in `items_needing_review.csv`.
-- Any rule changes are deterministic YAML edits with tests when needed.
+- Any rule changes are deterministic YAML or saved Firestore mappings.
