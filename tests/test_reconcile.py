@@ -115,3 +115,53 @@ def test_component_consistency_excludes_shipping_when_grand_total_matches_withou
     assert rec["items"].iloc[0]["allocated_total"] == Decimal("26.05")
     assert "source_shipping_total_excluded" in rec["items"].iloc[0]["component_allocation_notes"]
     assert not rec["items"].iloc[0]["needs_review"]
+
+
+def test_component_consistency_chooses_matching_subset_from_multiple_components():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-component-subset",
+                "posted_date": "2026-04-29",
+                "merchant_normalized": "amazon",
+                "amount": -23.00,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "amazon",
+                "order_id": "order-components",
+                "transaction_date": "2026-04-27",
+                "merchant_normalized": "amazon",
+                "item_subtotal": 20.00,
+                "allocated_tax": 0,
+                "allocated_shipping": 0,
+                "allocated_fee": 0,
+                "item_discount": 0,
+                "allocated_total": 20.00,
+                "source_tax_total": 2.00,
+                "source_shipping_total": 5.00,
+                "source_fee_total": 1.00,
+                "source_discount_total": 0,
+                "source_grand_total": 23.00,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Home_Improvement",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    item = rec["items"].iloc[0]
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "ok"
+    assert item["allocated_tax"] == Decimal("2.00")
+    assert item["allocated_fee"] == Decimal("1.00")
+    assert item["allocated_shipping"] == Decimal("0.00")
+    assert item["allocated_total"] == Decimal("23.00")
+    assert "source_shipping_total_excluded" in item["component_allocation_notes"]

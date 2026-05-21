@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from itertools import combinations
 
@@ -8,6 +9,23 @@ import pandas as pd
 from .categorize import append_reason
 from .models import TWOPLACES, money
 from .normalize import normalize_merchant
+
+
+@dataclass(frozen=True)
+class CostComponent:
+    label: str
+    source_column: str
+    allocation_column: str
+    sign: int = 1
+    use_absolute_value: bool = False
+
+
+ORDER_COST_COMPONENTS = (
+    CostComponent("tax", "source_tax_total", "allocated_tax"),
+    CostComponent("shipping", "source_shipping_total", "allocated_shipping"),
+    CostComponent("fee", "source_fee_total", "allocated_fee"),
+    CostComponent("discount", "source_discount_total", "item_discount", sign=-1, use_absolute_value=True),
+)
 
 
 def _dec(value: object) -> Decimal:
@@ -34,30 +52,17 @@ def allocate_order_amounts(df: pd.DataFrame, tolerance: Decimal = Decimal("0.03"
         base = sum(positive_subtotals, Decimal("0"))
         effective_components, notes = _consistent_source_components(group, base, tolerance)
 
-        for source_col, alloc_col in [
-            ("source_tax_total", "allocated_tax"),
-            ("source_shipping_total", "allocated_shipping"),
-            ("source_fee_total", "allocated_fee"),
-        ]:
-            source_total = effective_components.get(source_col)
-            original_source_total = first_decimal(group, source_col)
-            current_total = sum((_dec(out.at[i, alloc_col]) for i in indices), Decimal("0"))
+        for component in ORDER_COST_COMPONENTS:
+            source_total = effective_components.get(component.source_column)
+            original_source_total = first_decimal(group, component.source_column)
+            current_total = sum((_dec(out.at[i, component.allocation_column]) for i in indices), Decimal("0"))
             if source_total is None:
                 continue
-            if source_total == 0 and original_source_total not in {None, Decimal("0.00")}:
-                _allocate(out, indices, positive_subtotals, base, Decimal("0.00"), alloc_col)
-            elif source_total != 0 and (abs(current_total) <= tolerance or abs(current_total - source_total) > tolerance):
-                _allocate(out, indices, positive_subtotals, base, source_total, alloc_col)
-
-        source_discount = effective_components.get("source_discount_total")
-        original_source_discount = first_decimal(group, "source_discount_total")
-        current_discount = sum((_dec(out.at[i, "item_discount"]) for i in indices), Decimal("0"))
-        if source_discount is not None:
-            discount_amount = abs(source_discount)
-            if discount_amount == 0 and original_source_discount not in {None, Decimal("0.00")}:
-                _allocate(out, indices, positive_subtotals, base, Decimal("0.00"), "item_discount")
-            elif discount_amount != 0 and (abs(current_discount) <= tolerance or abs(current_discount - discount_amount) > tolerance):
-                _allocate(out, indices, positive_subtotals, base, discount_amount, "item_discount")
+            component_amount = _component_amount(component, source_total)
+            if component_amount == 0 and original_source_total not in {None, Decimal("0.00")}:
+                _allocate(out, indices, positive_subtotals, base, Decimal("0.00"), component.allocation_column)
+            elif component_amount != 0 and (abs(current_total) <= tolerance or abs(current_total - component_amount) > tolerance):
+                _allocate(out, indices, positive_subtotals, base, component_amount, component.allocation_column)
 
         if notes:
             note = "; ".join(notes)
@@ -73,56 +78,76 @@ def allocate_order_amounts(df: pd.DataFrame, tolerance: Decimal = Decimal("0.03"
 
 def _consistent_source_components(group: pd.DataFrame, base: Decimal, tolerance: Decimal) -> tuple[dict[str, Decimal | None], list[str]]:
     source_grand = first_decimal(group, "source_grand_total")
-    components = {
-        "source_tax_total": first_decimal(group, "source_tax_total"),
-        "source_shipping_total": first_decimal(group, "source_shipping_total"),
-        "source_fee_total": first_decimal(group, "source_fee_total"),
-        "source_discount_total": first_decimal(group, "source_discount_total"),
-    }
+    source_values = _source_component_values(group)
     if source_grand is None:
-        return components, []
+        return source_values, []
 
-    present = {key: value for key, value in components.items() if value is not None and _component_amount(key, value) != 0}
+    present = _present_components(source_values)
     if not present:
-        return components, []
+        return source_values, []
 
-    if abs(_component_total(base, present) - source_grand) <= tolerance:
-        return components, []
+    if abs(_component_total(base, present, source_values) - source_grand) <= tolerance:
+        return source_values, []
 
-    names = list(present)
-    matches: list[tuple[int, Decimal, set[str]]] = []
-    for size in range(len(names) + 1):
-        for subset in combinations(names, size):
-            selected = set(subset)
-            selected_components = {key: present[key] for key in selected}
-            candidate_total = _component_total(base, selected_components)
-            if abs(candidate_total - source_grand) <= tolerance:
-                included_amount = sum((_component_amount(key, present[key]) for key in selected), Decimal("0.00"))
-                matches.append((len(selected), included_amount, selected))
+    matches = _matching_component_subsets(base, source_grand, present, source_values, tolerance)
     if not matches:
-        return components, []
+        return source_values, []
 
-    selected = sorted(matches, key=lambda match: (match[0], match[1]), reverse=True)[0][2]
-    effective = components.copy()
+    selected = sorted(matches, key=lambda match: (len(match), _component_amount_sum(match, source_values)), reverse=True)[0]
+    effective = source_values.copy()
     notes: list[str] = []
-    for key in present:
-        if key in selected:
+    for component in present:
+        if component in selected:
             continue
-        effective[key] = Decimal("0.00")
-        notes.append(f"{key}_excluded_from_allocated_total_to_match_source_grand_total")
+        effective[component.source_column] = Decimal("0.00")
+        notes.append(f"{component.source_column}_excluded_from_allocated_total_to_match_source_grand_total")
     return effective, notes
 
 
-def _component_total(base: Decimal, components: dict[str, Decimal]) -> Decimal:
+def _source_component_values(group: pd.DataFrame) -> dict[str, Decimal | None]:
+    return {component.source_column: first_decimal(group, component.source_column) for component in ORDER_COST_COMPONENTS}
+
+
+def _present_components(source_values: dict[str, Decimal | None]) -> list[CostComponent]:
+    return [
+        component
+        for component in ORDER_COST_COMPONENTS
+        if source_values.get(component.source_column) is not None
+        and _component_amount(component, source_values[component.source_column] or Decimal("0.00")) != 0
+    ]
+
+
+def _matching_component_subsets(
+    base: Decimal,
+    source_grand: Decimal,
+    components: list[CostComponent],
+    source_values: dict[str, Decimal | None],
+    tolerance: Decimal,
+) -> list[tuple[CostComponent, ...]]:
+    matches: list[tuple[CostComponent, ...]] = []
+    for size in range(len(components) + 1):
+        for subset in combinations(components, size):
+            if abs(_component_total(base, subset, source_values) - source_grand) <= tolerance:
+                matches.append(subset)
+    return matches
+
+
+def _component_total(base: Decimal, components: list[CostComponent] | tuple[CostComponent, ...], source_values: dict[str, Decimal | None]) -> Decimal:
     total = base
-    for key, value in components.items():
-        amount = _component_amount(key, value)
-        total = total - amount if key == "source_discount_total" else total + amount
+    for component in components:
+        source_value = source_values.get(component.source_column)
+        if source_value is None:
+            continue
+        total += component.sign * _component_amount(component, source_value)
     return total.quantize(TWOPLACES)
 
 
-def _component_amount(key: str, value: Decimal) -> Decimal:
-    amount = abs(value) if key == "source_discount_total" else value
+def _component_amount_sum(components: tuple[CostComponent, ...], source_values: dict[str, Decimal | None]) -> Decimal:
+    return sum((_component_amount(component, source_values[component.source_column] or Decimal("0.00")) for component in components), Decimal("0.00"))
+
+
+def _component_amount(component: CostComponent, value: Decimal) -> Decimal:
+    amount = abs(value) if component.use_absolute_value else value
     return amount.quantize(TWOPLACES)
 
 
