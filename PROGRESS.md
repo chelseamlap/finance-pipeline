@@ -41,6 +41,8 @@ Local Google auth is expected to use the service account key at:
 - Category rules are deterministic and layered: saved mapping, exact identifiers, exact descriptions, search overrides, broad keywords, retailer fallback, then `Unknown_Review`.
 - Retail orders now match back to Simplifi using the retailer `source_grand_total` when available, so item-vs-retailer mismatches can still be reconciled to the posted transaction.
 - Reconciliation detail now separates Simplifi truth (`simplifi_amount` / `simplifi_reconciled_total`), item-derived totals (`item_derived_total`), retailer/export totals (`retailer_source_grand_total`), and pairwise differences instead of forcing category totals to match.
+- Same-order duplicate OrderPro item rows are collapsed before categorization/reconciliation, which addresses Costco OrderPro repeating identical item rows across exports or owners.
+- Simplifi matching is sign-aware: positive retailer charges no longer match Simplifi refunds by absolute value, while negative retailer refund totals can match positive Simplifi credits.
 
 ## Important Recent Commits
 

@@ -272,3 +272,81 @@ def test_negative_source_discount_is_normalized_before_allocation():
     assert item["item_discount"] == Decimal("5.00")
     assert item["allocated_total"] == Decimal("15.00")
     assert "source_discount_total_normalized_to_positive_amount_to_subtract" in item["component_allocation_notes"]
+
+
+def test_positive_retailer_total_does_not_match_simplifi_refund():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-costco-refund",
+                "posted_date": "2026-01-24",
+                "merchant_normalized": "costco",
+                "amount": 21.78,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "costco",
+                "order_id": "costco-charge",
+                "transaction_date": "2026-01-24",
+                "merchant_normalized": "costco",
+                "item_subtotal": 21.78,
+                "allocated_total": 21.78,
+                "source_grand_total": 21.78,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "unmatched_transaction"
+    assert detail["matched_simplifi_transaction_id"] == ""
+    assert pd.isna(detail["simplifi_amount"])
+
+
+def test_negative_retailer_total_matches_simplifi_refund():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-costco-refund",
+                "posted_date": "2026-01-24",
+                "merchant_normalized": "costco",
+                "amount": 21.78,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "costco",
+                "order_id": "costco-refund",
+                "transaction_date": "2026-01-24",
+                "merchant_normalized": "costco",
+                "item_subtotal": -21.78,
+                "allocated_total": -21.78,
+                "source_grand_total": -21.78,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "ok"
+    assert detail["matched_simplifi_transaction_id"] == "txn-costco-refund"
+    assert detail["simplifi_amount"] == Decimal("21.78")
+    assert detail["simplifi_reconciled_total"] == Decimal("-21.78")
+    assert detail["retailer_vs_simplifi_difference"] == Decimal("0.00")

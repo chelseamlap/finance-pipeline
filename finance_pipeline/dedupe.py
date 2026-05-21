@@ -27,6 +27,8 @@ def dedupe_retail_items(df: pd.DataFrame) -> pd.DataFrame:
     if "dedupe_notes" not in out.columns:
         out["dedupe_notes"] = ""
 
+    out = _collapse_same_order_duplicate_items(out)
+
     keep_indices: list[int] = []
     for (_, _), group in out.groupby(["retailer", "order_id"], dropna=False, sort=False):
         adapters = sorted(set(group["source_adapter"].fillna("").astype(str)))
@@ -41,6 +43,67 @@ def dedupe_retail_items(df: pd.DataFrame) -> pd.DataFrame:
         keep_indices.extend(selected.index.tolist())
 
     return out.loc[sorted(keep_indices)].reset_index(drop=True)
+
+
+def _collapse_same_order_duplicate_items(df: pd.DataFrame) -> pd.DataFrame:
+    key_columns = [
+        "retailer",
+        "order_id",
+        "source_adapter",
+        "transaction_date",
+        "item_description_normalized",
+        "sku",
+        "asin",
+        "upc",
+        "quantity",
+        "unit_price",
+        "item_subtotal",
+        "allocated_total",
+        "item_discount",
+        "source_order_total",
+        "source_tax_total",
+        "source_discount_total",
+        "source_shipping_total",
+        "source_fee_total",
+        "source_grand_total",
+    ]
+    existing_keys = [column for column in key_columns if column in df.columns]
+    if not {"retailer", "order_id", "source_adapter"}.issubset(existing_keys):
+        return df
+
+    orderpro_mask = df["source_adapter"].astype(str).eq("orderpro")
+    if not orderpro_mask.any():
+        return df
+
+    out = df.copy()
+    normalized_keys = out.loc[orderpro_mask, existing_keys].copy()
+    for column in existing_keys:
+        normalized_keys[column] = normalized_keys[column].map(_dedupe_key_value)
+    normalized_keys["_original_index"] = normalized_keys.index
+
+    keep_indices: list[int] = out.index[~orderpro_mask].tolist()
+    duplicate_notes: dict[int, str] = {}
+    for _, key_group in normalized_keys.groupby(existing_keys, dropna=False, sort=False):
+        indices = key_group["_original_index"].tolist()
+        keep_idx = indices[0]
+        keep_indices.append(keep_idx)
+        duplicate_count = len(indices) - 1
+        if duplicate_count > 0:
+            duplicate_notes[keep_idx] = f"deduped_duplicate_item_rows: collapsed {duplicate_count} duplicate row(s)"
+
+    out = out.loc[sorted(keep_indices)].copy()
+    for idx, note in duplicate_notes.items():
+        out.at[idx, "dedupe_notes"] = _append_note(out.at[idx, "dedupe_notes"], note)
+    return out.reset_index(drop=True)
+
+
+def _dedupe_key_value(value: object) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "nat"}:
+        return ""
+    return text.lower()
 
 
 def _preferred_adapter(group: pd.DataFrame) -> str:

@@ -448,13 +448,13 @@ def _match_transaction(
     order_date = pd.to_datetime(order["transaction_date"])
     retailer = normalize_merchant(order.get("retailer", ""))
     match_total = order.get("retailer_source_grand_total")
-    amount = abs(_dec(match_total) if pd.notna(match_total) and str(match_total) != "" else _dec(order["item_derived_total"]))
+    amount = _dec(match_total) if pd.notna(match_total) and str(match_total) != "" else _dec(order["item_derived_total"])
     candidates = transactions.copy()
     candidates["_date"] = pd.to_datetime(candidates["posted_date"])
-    candidates["_amount_abs"] = candidates["amount"].apply(lambda value: abs(_dec(value)))
+    candidates["_simplifi_reconciled_total"] = candidates["amount"].apply(lambda value: (-_dec(value)).quantize(TWOPLACES))
     candidates = candidates[
         (abs((candidates["_date"] - order_date).dt.days) <= date_window_days)
-        & (abs(candidates["_amount_abs"] - amount) <= tolerance)
+        & (abs(candidates["_simplifi_reconciled_total"] - amount) <= tolerance)
         & (candidates["merchant_normalized"].astype(str).str.contains(retailer, case=False, na=False))
     ]
     if already_matched:
