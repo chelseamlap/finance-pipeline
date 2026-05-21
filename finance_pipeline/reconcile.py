@@ -210,17 +210,22 @@ def reconcile(
     matched_order_keys: set[tuple[str, str]] = set()
 
     for _, order in order_rows.iterrows():
-        calc = _dec(order["calculated_total"])
-        source_grand = order.get("source_grand_total")
-        source_total = _dec(source_grand) if pd.notna(source_grand) and str(source_grand) != "" else None
-        diff = (calc - source_total).quantize(TWOPLACES) if source_total is not None else Decimal("0.00")
-        status = "ok" if source_total is None or abs(diff) <= amount_tolerance else "total_mismatch"
-        base_difference = _base_difference_after_components(order, source_total) if source_total is not None else Decimal("0.00")
-        mismatch_diagnostic, mismatch_basis = _diagnose_total_mismatch(order, diff, base_difference, amount_tolerance) if status == "total_mismatch" else ("", "")
+        item_derived_total = _dec(order["item_derived_total"])
+        retailer_source_grand = order.get("retailer_source_grand_total")
+        retailer_source_total = _dec(retailer_source_grand) if pd.notna(retailer_source_grand) and str(retailer_source_grand) != "" else None
+        item_vs_retailer_difference = (item_derived_total - retailer_source_total).quantize(TWOPLACES) if retailer_source_total is not None else Decimal("0.00")
+        status = "ok" if retailer_source_total is None or abs(item_vs_retailer_difference) <= amount_tolerance else "total_mismatch"
+        base_difference = _base_difference_after_components(order, retailer_source_total) if retailer_source_total is not None else Decimal("0.00")
+        mismatch_diagnostic, mismatch_basis = _diagnose_total_mismatch(order, item_vs_retailer_difference, base_difference, amount_tolerance) if status == "total_mismatch" else ("", "")
 
         match_id = ""
         if not transactions.empty:
             match_id = _match_transaction(transactions, order, amount_tolerance, date_window_days, matched_txn_ids)
+        simplifi_amount = _matched_simplifi_amount(transactions, match_id) if match_id else None
+        simplifi_reconciled_total = (-simplifi_amount).quantize(TWOPLACES) if simplifi_amount is not None else None
+        item_vs_simplifi_difference = (item_derived_total - simplifi_reconciled_total).quantize(TWOPLACES) if simplifi_reconciled_total is not None else None
+        retailer_vs_simplifi_difference = (retailer_source_total - simplifi_reconciled_total).quantize(TWOPLACES) if retailer_source_total is not None and simplifi_reconciled_total is not None else None
+
         if match_id:
             matched_txn_ids.add(match_id)
             matched_order_keys.add((str(order["retailer"]), str(order["order_id"])))
@@ -241,20 +246,24 @@ def reconcile(
                 "retailer": order["retailer"],
                 "order_id": order["order_id"],
                 "transaction_date": order["transaction_date"],
-                "calculated_total": calc,
-                "source_grand_total": source_total,
-                "difference": diff,
+                "simplifi_amount": simplifi_amount,
+                "simplifi_reconciled_total": simplifi_reconciled_total,
+                "item_derived_total": item_derived_total,
+                "retailer_source_grand_total": retailer_source_total,
+                "item_vs_simplifi_difference": item_vs_simplifi_difference,
+                "retailer_vs_simplifi_difference": retailer_vs_simplifi_difference,
+                "item_vs_retailer_difference": item_vs_retailer_difference,
                 "base_difference_after_components": base_difference,
                 "item_subtotal_total": order.get("item_subtotal_total"),
                 "item_discount_total": order.get("item_discount_total"),
                 "allocated_tax_total": order.get("allocated_tax_total"),
                 "allocated_shipping_total": order.get("allocated_shipping_total"),
                 "allocated_fee_total": order.get("allocated_fee_total"),
-                "source_order_total": order.get("source_order_total"),
-                "source_tax_total": order.get("source_tax_total"),
-                "source_discount_total": order.get("source_discount_total"),
-                "source_shipping_total": order.get("source_shipping_total"),
-                "source_fee_total": order.get("source_fee_total"),
+                "retailer_source_order_total": order.get("retailer_source_order_total"),
+                "retailer_source_tax_total": order.get("retailer_source_tax_total"),
+                "retailer_source_discount_total": order.get("retailer_source_discount_total"),
+                "retailer_source_shipping_total": order.get("retailer_source_shipping_total"),
+                "retailer_source_fee_total": order.get("retailer_source_fee_total"),
                 "item_rows": order.get("item_rows"),
                 "matched_simplifi_transaction_id": match_id,
                 "status": status,
@@ -320,18 +329,18 @@ def _orders(items: pd.DataFrame) -> pd.DataFrame:
                 "order_id": order_id,
                 "transaction_date": pd.to_datetime(group["transaction_date"].iloc[0]).date(),
                 "merchant_normalized": group["merchant_normalized"].iloc[0],
-                "calculated_total": sum((_dec(v) for v in group["allocated_total"]), Decimal("0.00")).quantize(TWOPLACES),
+                "item_derived_total": sum((_dec(v) for v in group["allocated_total"]), Decimal("0.00")).quantize(TWOPLACES),
                 "item_subtotal_total": _sum_column(group, "item_subtotal"),
                 "item_discount_total": _sum_column(group, "item_discount"),
                 "allocated_tax_total": _sum_column(group, "allocated_tax"),
                 "allocated_shipping_total": _sum_column(group, "allocated_shipping"),
                 "allocated_fee_total": _sum_column(group, "allocated_fee"),
-                "source_order_total": first_decimal(group, "source_order_total"),
-                "source_tax_total": first_decimal(group, "source_tax_total"),
-                "source_discount_total": first_decimal(group, "source_discount_total"),
-                "source_shipping_total": first_decimal(group, "source_shipping_total"),
-                "source_fee_total": first_decimal(group, "source_fee_total"),
-                "source_grand_total": first_decimal(group, "source_grand_total"),
+                "retailer_source_order_total": first_decimal(group, "source_order_total"),
+                "retailer_source_tax_total": first_decimal(group, "source_tax_total"),
+                "retailer_source_discount_total": first_decimal(group, "source_discount_total"),
+                "retailer_source_shipping_total": first_decimal(group, "source_shipping_total"),
+                "retailer_source_fee_total": first_decimal(group, "source_fee_total"),
+                "retailer_source_grand_total": first_decimal(group, "source_grand_total"),
                 "item_rows": len(group),
             }
         )
@@ -352,10 +361,10 @@ def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, base_differe
         "discount": _dec(order.get("item_discount_total")),
     }
     source_components = {
-        "tax": order.get("source_tax_total"),
-        "shipping": order.get("source_shipping_total"),
-        "fee": order.get("source_fee_total"),
-        "discount": order.get("source_discount_total"),
+        "tax": order.get("retailer_source_tax_total"),
+        "shipping": order.get("retailer_source_shipping_total"),
+        "fee": order.get("retailer_source_fee_total"),
+        "discount": order.get("retailer_source_discount_total"),
     }
     component_mismatches = []
     for name, source_value in source_components.items():
@@ -368,9 +377,9 @@ def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, base_differe
 
     basis = "; ".join(
         [
-            f"calculated_total={_dec(order.get('calculated_total'))}",
-            f"source_grand_total={_dec(order.get('source_grand_total'))}",
-            f"difference={difference}",
+            f"item_derived_total={_dec(order.get('item_derived_total'))}",
+            f"retailer_source_grand_total={_dec(order.get('retailer_source_grand_total'))}",
+            f"item_vs_retailer_difference={difference}",
             f"item_subtotal_total={_dec(order.get('item_subtotal_total'))}",
             f"expected_item_subtotal_after_components={(_dec(order.get('item_subtotal_total')) - base_difference).quantize(TWOPLACES)}",
             f"base_difference_after_components={base_difference}",
@@ -402,19 +411,31 @@ def _diagnose_total_mismatch(order: pd.Series, difference: Decimal, base_differe
     if int(order.get("item_rows") or 0) == 1:
         return "single_item_price_or_adjustment_mismatch", basis
     if difference > 0:
-        return "source_total_lower_than_item_components", basis
-    return "source_total_higher_than_item_components", basis
+        return "retailer_source_total_lower_than_item_components", basis
+    return "retailer_source_total_higher_than_item_components", basis
 
 
-def _base_difference_after_components(order: pd.Series, source_total: Decimal) -> Decimal:
+def _base_difference_after_components(order: pd.Series, retailer_source_total: Decimal) -> Decimal:
     expected_base = (
-        source_total
+        retailer_source_total
         + _dec(order.get("item_discount_total"))
         - _dec(order.get("allocated_tax_total"))
         - _dec(order.get("allocated_shipping_total"))
         - _dec(order.get("allocated_fee_total"))
     ).quantize(TWOPLACES)
     return (_dec(order.get("item_subtotal_total")) - expected_base).quantize(TWOPLACES)
+
+
+def _matched_simplifi_amount(transactions: pd.DataFrame, transaction_id: str) -> Decimal | None:
+    if transactions.empty or not transaction_id:
+        return None
+    matches = transactions[transactions["transaction_id"] == transaction_id]
+    if matches.empty:
+        return None
+    value = matches.iloc[0].get("amount")
+    if value is None or str(value).strip() in {"", "nan", "NaN", "None"}:
+        return None
+    return _dec(value)
 
 
 def _match_transaction(
@@ -426,8 +447,8 @@ def _match_transaction(
 ) -> str:
     order_date = pd.to_datetime(order["transaction_date"])
     retailer = normalize_merchant(order.get("retailer", ""))
-    match_total = order.get("source_grand_total")
-    amount = abs(_dec(match_total) if pd.notna(match_total) and str(match_total) != "" else _dec(order["calculated_total"]))
+    match_total = order.get("retailer_source_grand_total")
+    amount = abs(_dec(match_total) if pd.notna(match_total) and str(match_total) != "" else _dec(order["item_derived_total"]))
     candidates = transactions.copy()
     candidates["_date"] = pd.to_datetime(candidates["posted_date"])
     candidates["_amount_abs"] = candidates["amount"].apply(lambda value: abs(_dec(value)))

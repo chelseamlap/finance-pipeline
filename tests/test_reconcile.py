@@ -12,8 +12,14 @@ def test_totals_reconcile_and_match_simplifi():
     items, _ = categorize_items(items)
     rec = reconcile(tx, items)
     detail = rec["reconciliation_detail"]
-    assert detail.loc[0, "difference"] == 0
+    assert detail.loc[0, "item_vs_retailer_difference"] == 0
     assert detail.loc[0, "matched_simplifi_transaction_id"] == "txn-amz-1"
+    assert detail.loc[0, "simplifi_amount"] == Decimal("-15.98")
+    assert detail.loc[0, "simplifi_reconciled_total"] == Decimal("15.98")
+    assert detail.loc[0, "item_derived_total"] == Decimal("15.98")
+    assert detail.loc[0, "retailer_source_grand_total"] == Decimal("15.98")
+    assert detail.loc[0, "item_vs_simplifi_difference"] == Decimal("0.00")
+    assert detail.loc[0, "retailer_vs_simplifi_difference"] == Decimal("0.00")
 
 
 def test_no_rows_silently_dropped_for_malformed_file(tmp_path):
@@ -65,7 +71,16 @@ def test_total_mismatch_can_still_match_simplifi_by_source_grand_total():
     assert rec["unmatched_simplifi_transactions"].empty
     assert detail["mismatch_diagnostic"] == "single_item_base_higher_than_source_after_components"
     assert detail["base_difference_after_components"] == Decimal("24.30")
-    assert "calculated_total=122.44" in detail["mismatch_basis"]
+    assert detail["item_derived_total"] == Decimal("122.44")
+    assert detail["retailer_source_grand_total"] == Decimal("98.14")
+    assert detail["simplifi_amount"] == Decimal("-98.14")
+    assert detail["simplifi_reconciled_total"] == Decimal("98.14")
+    assert detail["item_vs_simplifi_difference"] == Decimal("24.30")
+    assert detail["retailer_vs_simplifi_difference"] == Decimal("0.00")
+    assert detail["item_vs_retailer_difference"] == Decimal("24.30")
+    assert "item_derived_total=122.44" in detail["mismatch_basis"]
+    assert "retailer_source_grand_total=98.14" in detail["mismatch_basis"]
+    assert "item_vs_retailer_difference=24.30" in detail["mismatch_basis"]
     assert "base_difference_after_components=24.30" in detail["mismatch_basis"]
     assert rec["items"].iloc[0]["review_reason"] == "unknown category; total_mismatch: single_item_base_higher_than_source_after_components"
 
@@ -111,7 +126,7 @@ def test_component_consistency_excludes_shipping_when_grand_total_matches_withou
     detail = rec["reconciliation_detail"].iloc[0]
 
     assert detail["status"] == "ok"
-    assert detail["difference"] == 0
+    assert detail["item_vs_retailer_difference"] == 0
     assert detail["matched_simplifi_transaction_id"] == "txn-amz-shipping-gap"
     assert rec["items"].iloc[0]["allocated_shipping"] == Decimal("0.00")
     assert rec["items"].iloc[0]["allocated_total"] == Decimal("26.05")

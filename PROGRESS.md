@@ -39,8 +39,8 @@ Local Google auth is expected to use the service account key at:
 - Month-scoped exports under `data/processed/YYYY-MM/`.
 - Firestore saved mappings and BigQuery analytics hooks are available when CLI flags are provided.
 - Category rules are deterministic and layered: saved mapping, exact identifiers, exact descriptions, search overrides, broad keywords, retailer fallback, then `Unknown_Review`.
-- Retail orders now match back to Simplifi using `source_grand_total` when available, so total-mismatch orders can still be reconciled to the posted transaction.
-- Reconciliation detail now includes component totals and mismatch diagnostics instead of forcing category totals to match.
+- Retail orders now match back to Simplifi using the retailer `source_grand_total` when available, so item-vs-retailer mismatches can still be reconciled to the posted transaction.
+- Reconciliation detail now separates Simplifi truth (`simplifi_amount` / `simplifi_reconciled_total`), item-derived totals (`item_derived_total`), retailer/export totals (`retailer_source_grand_total`), and pairwise differences instead of forcing category totals to match.
 
 ## Important Recent Commits
 
@@ -90,8 +90,8 @@ April mismatch diagnostics:
 
 ```text
 single_item_price_or_adjustment_mismatch: 4
-source_total_lower_than_item_components: 3
-source_total_higher_than_item_components: 2
+retailer_source_total_lower_than_item_components: 3
+retailer_source_total_higher_than_item_components: 2
 ```
 
 One Amazon order that previously mismatched is now explained and fixed by excluding shipping from allocated category spend. This was source-backed: excluding the shipping component made the item total tie to the charged total exactly.
@@ -102,7 +102,7 @@ The pipeline is now connecting the major pieces correctly:
 
 - All April retail orders in the output match back to Simplifi.
 - No April retail orders are unmatched.
-- Remaining April issues are not matching failures; they are source/item-total explanation issues.
+- Remaining April issues are not matching failures; they are retailer-source/item-derived total explanation issues.
 - Category totals are not force-balanced. They reflect item-derived totals after only source-backed component consistency fixes.
 
 Remaining visible April issues:
@@ -154,8 +154,8 @@ data/processed/2026-04/monthly_category_summary.csv
 5. Sort `reconciliation_detail.csv` by `mismatch_diagnostic` and tackle the remaining classes in this order:
 
 - `single_item_price_or_adjustment_mismatch`
-- `source_total_lower_than_item_components`
-- `source_total_higher_than_item_components`
+- `retailer_source_total_lower_than_item_components`
+- `retailer_source_total_higher_than_item_components`
 
 Do not add balancing adjustments unless a source field explains the gap.
 
