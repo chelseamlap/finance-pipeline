@@ -12,6 +12,7 @@ class MemoryStateStore:
         self.transactions: dict[str, dict] = {}
         self.retail_items: dict[str, dict] = {}
         self.category_mappings: dict[tuple[str, str], dict] = {}
+        self.mapping_candidates: dict[str, dict] = {}
 
     def close(self) -> None:
         return None
@@ -46,6 +47,16 @@ class MemoryStateStore:
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
         return self.category_mappings.get((mapping_type, mapping_key))
+
+    def list_mappings(self) -> list[dict]:
+        return sorted(self.category_mappings.values(), key=lambda row: (row.get("mapping_type", ""), row.get("mapping_key", "")))
+
+    def upsert_mapping_candidate(self, candidate: dict[str, Any]) -> None:
+        record = json.loads(json.dumps(candidate, default=_json_default))
+        self.mapping_candidates[str(record["candidate_id"])] = record
+
+    def list_mapping_candidates(self) -> list[dict]:
+        return sorted(self.mapping_candidates.values(), key=lambda row: (row.get("status", ""), row.get("candidate_id", "")))
 
     def _upsert(self, records: dict[str, dict], id_column: str, df: pd.DataFrame, run_id: str) -> int:
         if df.empty:

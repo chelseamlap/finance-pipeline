@@ -90,6 +90,44 @@ def test_firestore_mapping_upsert_includes_audit_metadata():
     assert "updated_at" in payload
 
 
+def test_memory_store_lists_mappings_and_candidates():
+    store = MemoryStateStore()
+    store.upsert_mapping("description", "target:whole milk", "Groceries", source="manual")
+    store.upsert_mapping_candidate(
+        {
+            "candidate_id": "candidate-1",
+            "mapping_type": "description",
+            "mapping_key": "target:mystery object",
+            "reason": "unknown_category",
+            "status": "needs_review",
+        }
+    )
+
+    assert store.list_mappings()[0]["mapping_key"] == "target:whole milk"
+    assert store.list_mapping_candidates()[0]["candidate_id"] == "candidate-1"
+
+
+def test_firestore_mapping_candidate_upsert_uses_queue_collection():
+    store = object.__new__(FirestoreStateStore)
+    store.client = FakeFirestoreClient()
+    store.collection_prefix = "test"
+
+    store.upsert_mapping_candidate(
+        {
+            "candidate_id": "candidate-1",
+            "mapping_type": "description",
+            "mapping_key": "target:mystery object",
+            "reason": "unknown_category",
+            "status": "needs_review",
+        }
+    )
+
+    collection = store.client.collections["test_mapping_candidates"]
+    assert collection.doc_id == "candidate-1"
+    assert collection.last_payload["reason"] == "unknown_category"
+    assert collection.last_payload["updated_at"]
+
+
 class FakeFirestoreClient:
     def __init__(self):
         self.collections = {}

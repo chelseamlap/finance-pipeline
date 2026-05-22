@@ -64,3 +64,52 @@ def test_collect_source_max_dates_summarizes_orderpro_store_folders(tmp_path, mo
     assert folder_records[0].folder == raw
     assert folder_records[0].max_date is not None
     assert folder_records[0].max_date.isoformat() == "2026-05-04"
+
+
+def test_cli_export_mappings_writes_mapping_review_files(tmp_path, monkeypatch):
+    import finance_pipeline.cli as cli
+
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: FakeMappingStore())
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "export-mappings",
+            "--firestore-project",
+            "test-project",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "category_mappings.csv").exists()
+    assert (tmp_path / "mapping_candidates.csv").exists()
+    assert "target:whole milk" in (tmp_path / "category_mappings.csv").read_text()
+    assert "unknown_category" in (tmp_path / "mapping_candidates.csv").read_text()
+
+
+class FakeMappingStore:
+    def close(self):
+        return None
+
+    def list_mappings(self):
+        return [
+            {
+                "mapping_type": "description",
+                "mapping_key": "target:whole milk",
+                "category": "Groceries",
+            }
+        ]
+
+    def list_mapping_candidates(self):
+        return [
+            {
+                "candidate_id": "candidate-1",
+                "mapping_type": "description",
+                "mapping_key": "target:mystery object",
+                "reason": "unknown_category",
+                "status": "needs_review",
+            }
+        ]

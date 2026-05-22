@@ -12,6 +12,7 @@ from .categorize import categorize_items
 from .export import write_month_outputs
 from .logging_config import configure_logging
 from .dedupe import dedupe_retail_items
+from .mappings import export_mapping_tables
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
 from .source_dates import SourceDateRecord, collect_source_max_dates
@@ -109,6 +110,24 @@ def save_mapping(
     store.upsert_mapping(mapping_type, mapping_key, category, source="manual", confidence="manual", reviewed=True)
     store.close()
     typer.echo(f"Saved {mapping_type}:{mapping_key} -> {category}")
+
+
+@app.command("export-mappings")
+def export_mappings(
+    firestore_project: str = typer.Option(..., "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    output_dir: Path = typer.Option(Path("data/processed/mapping_review"), "--output-dir"),
+) -> None:
+    store = FirestoreStateStore(firestore_project, firestore_prefix)
+    mappings, candidates = export_mapping_tables(store)
+    store.close()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    mappings_path = output_dir / "category_mappings.csv"
+    candidates_path = output_dir / "mapping_candidates.csv"
+    mappings.to_csv(mappings_path, index=False)
+    candidates.to_csv(candidates_path, index=False)
+    typer.echo(f"Wrote {len(mappings)} mapping(s) to {mappings_path}")
+    typer.echo(f"Wrote {len(candidates)} mapping candidate(s) to {candidates_path}")
 
 
 @app.command()

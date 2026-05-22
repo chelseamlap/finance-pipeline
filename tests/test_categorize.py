@@ -100,3 +100,25 @@ def test_unknown_category_is_not_saved_as_historical_mapping():
 
     assert categorized.loc[0, "household_category"] == "Unknown_Review"
     assert store.category_mappings == {}
+    assert len(store.mapping_candidates) == 1
+    candidate = next(iter(store.mapping_candidates.values()))
+    assert candidate["reason"] == "unknown_category"
+    assert candidate["mapping_type"] == "description"
+    assert candidate["mapping_key"] == "amazon:mystery object"
+    assert candidate["original_item_description"] == "Mystery Object"
+
+
+def test_conflicting_historical_mapping_is_queued_for_review():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    store = MemoryStateStore()
+    key = f"amazon:{df.loc[0, 'asin']}"
+    store.upsert_mapping("asin", key, "Health_Personal_Care", source="manual")
+
+    categorize_items(df.iloc[[0]], mapping_store=store)
+
+    assert store.category_mappings[("asin", key)]["category"] == "Health_Personal_Care"
+    assert len(store.mapping_candidates) == 1
+    candidate = next(iter(store.mapping_candidates.values()))
+    assert candidate["reason"] == "mapping_conflict"
+    assert candidate["suggested_category"] == "Groceries"
+    assert candidate["evidence"] == "Saved mapping category is Health_Personal_Care"

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .mappings import first_saved_mapping, save_historical_item_mapping
+from .mappings import enqueue_mapping_candidate, first_saved_mapping, save_historical_item_mapping
 from .normalize import load_yaml, normalize_text, spending_class_for_retail_category
 
 
@@ -29,10 +29,28 @@ def categorize_items(df: pd.DataFrame, mapping_store=None) -> tuple[pd.DataFrame
         if category == "Unknown_Review":
             out.at[idx, "needs_review"] = True
             out.at[idx, "review_reason"] = append_reason(row.get("review_reason", ""), "unknown category")
+            if mapping_store is not None:
+                mapping_row = row.to_dict()
+                mapping_row["category_rule_id"] = rule_id
+                enqueue_mapping_candidate(mapping_row, mapping_store, reason="unknown_category")
         elif mapping_store is not None and not rule_id.startswith("saved:"):
             mapping_row = row.to_dict()
             mapping_row["category_rule_id"] = rule_id
             save_historical_item_mapping(mapping_row, category, mapping_store, source=confidence)
+        elif mapping_store is not None and rule_id.startswith("saved:"):
+            deterministic_category, deterministic_confidence, deterministic_rule_id = categorize_row(row, rules, allowed)
+            if deterministic_category not in {"Unknown_Review", category}:
+                mapping_row = row.to_dict()
+                mapping_row["category_rule_id"] = deterministic_rule_id
+                enqueue_mapping_candidate(
+                    mapping_row,
+                    mapping_store,
+                    reason="mapping_conflict",
+                    suggested_category=deterministic_category,
+                    source=deterministic_confidence,
+                    confidence=deterministic_confidence,
+                    evidence=f"Saved mapping category is {category}",
+                )
         coverage[rule_id or "none"] = coverage.get(rule_id or "none", 0) + 1
 
     coverage_df = pd.DataFrame(

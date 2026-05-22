@@ -63,6 +63,20 @@ class FirestoreStateStore:
         snapshot = self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).get()
         return snapshot.to_dict() if snapshot.exists else None
 
+    def list_mappings(self) -> list[dict]:
+        return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_category_mappings").stream()]
+
+    def upsert_mapping_candidate(self, candidate: dict[str, Any]) -> None:
+        payload = dict(candidate)
+        payload["updated_at"] = _now()
+        self.client.collection(f"{self.collection_prefix}_mapping_candidates").document(str(candidate["candidate_id"])).set(
+            payload,
+            merge=True,
+        )
+
+    def list_mapping_candidates(self) -> list[dict]:
+        return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_mapping_candidates").stream()]
+
     def _upsert_record_state(self, collection_name: str, id_column: str, df: pd.DataFrame, run_id: str) -> int:
         if df.empty:
             return 0

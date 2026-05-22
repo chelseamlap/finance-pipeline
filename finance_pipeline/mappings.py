@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .identity import item_mapping_keys_for_retail_item, mapping_keys_for_retail_item
+from .identity import item_mapping_keys_for_retail_item, mapping_keys_for_retail_item, stable_hash
 from .normalize import clean_string, normalize_text, spending_class_for_retail_category
 
 
@@ -47,6 +47,16 @@ def save_historical_item_mapping(row: dict, category: str, mapping_store, source
     mapping_type, mapping_key = keys[0]
     existing = mapping_store.get_mapping(mapping_type, mapping_key)
     if existing:
+        if existing.get("category") != category:
+            enqueue_mapping_candidate(
+                row,
+                mapping_store,
+                reason="mapping_conflict",
+                suggested_category=category,
+                source=source,
+                confidence=source,
+                evidence=f"Existing mapping category is {existing.get('category', '')}",
+            )
         return existing
     mapping_store.upsert_mapping(
         mapping_type,
@@ -66,6 +76,41 @@ def save_historical_item_mapping(row: dict, category: str, mapping_store, source
         "reviewed": False,
         **_historical_mapping_metadata(row),
     }
+
+
+def enqueue_mapping_candidate(
+    row: dict,
+    mapping_store,
+    reason: str,
+    suggested_category: str = "",
+    source: str = "review_queue",
+    confidence: str = "needs_review",
+    evidence: str = "",
+) -> dict | None:
+    keys = item_mapping_keys_for_retail_item(row)
+    if not keys:
+        return None
+    mapping_type, mapping_key = keys[0]
+    candidate = {
+        "candidate_id": stable_hash([mapping_type, mapping_key, reason], length=40),
+        "mapping_type": mapping_type,
+        "mapping_key": mapping_key,
+        "suggested_category": suggested_category,
+        "reason": reason,
+        "source": source,
+        "confidence": confidence,
+        "status": "needs_review",
+        "evidence": evidence,
+        **_historical_mapping_metadata(row),
+    }
+    mapping_store.upsert_mapping_candidate(candidate)
+    return candidate
+
+
+def export_mapping_tables(mapping_store) -> tuple[pd.DataFrame, pd.DataFrame]:
+    mappings = pd.DataFrame(mapping_store.list_mappings())
+    candidates = pd.DataFrame(mapping_store.list_mapping_candidates())
+    return mappings, candidates
 
 
 def _historical_mapping_metadata(row: dict) -> dict[str, object]:
