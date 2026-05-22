@@ -128,6 +128,20 @@ def test_firestore_mapping_candidate_upsert_uses_queue_collection():
     assert collection.last_payload["updated_at"]
 
 
+def test_firestore_get_mapping_candidate_reads_queue_collection():
+    store = object.__new__(FirestoreStateStore)
+    store.client = FakeFirestoreClient()
+    store.collection_prefix = "test"
+    store.client.collections["test_mapping_candidates"] = FakeFirestoreCollection(
+        snapshot_payload={"candidate_id": "candidate-1", "reason": "unknown_category"}
+    )
+
+    candidate = store.get_mapping_candidate("candidate-1")
+
+    assert candidate["candidate_id"] == "candidate-1"
+    assert store.client.collections["test_mapping_candidates"].doc_id == "candidate-1"
+
+
 def test_firestore_missing_database_error_is_actionable():
     exc = Exception("404 The database (default) does not exist for project spending-pipeline")
 
@@ -142,14 +156,17 @@ class FakeFirestoreClient:
         self.collections = {}
 
     def collection(self, name):
+        if name in self.collections:
+            return self.collections[name]
         collection = FakeFirestoreCollection()
         self.collections[name] = collection
         return collection
 
 
 class FakeFirestoreCollection:
-    def __init__(self):
+    def __init__(self, snapshot_payload=None):
         self.last_payload = None
+        self.snapshot_payload = snapshot_payload
 
     def document(self, doc_id):
         self.doc_id = doc_id
@@ -158,3 +175,15 @@ class FakeFirestoreCollection:
     def set(self, payload, merge=False):
         self.last_payload = payload
         self.merge = merge
+
+    def get(self):
+        return FakeFirestoreSnapshot(self.snapshot_payload)
+
+
+class FakeFirestoreSnapshot:
+    def __init__(self, payload):
+        self.payload = payload
+        self.exists = payload is not None
+
+    def to_dict(self):
+        return self.payload

@@ -87,6 +87,13 @@ class FirestoreStateStore:
         except Exception as exc:
             raise _friendly_firestore_error(exc, self.project) from exc
 
+    def get_mapping_candidate(self, candidate_id: str) -> dict | None:
+        try:
+            snapshot = self.client.collection(f"{self.collection_prefix}_mapping_candidates").document(candidate_id).get()
+        except Exception as exc:
+            raise _friendly_firestore_error(exc, self.project) from exc
+        return snapshot.to_dict() if snapshot.exists else None
+
     def list_mapping_candidates(self) -> list[dict]:
         try:
             return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_mapping_candidates").stream()]

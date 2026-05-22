@@ -2,6 +2,7 @@ from pathlib import Path
 
 from finance_pipeline.categorize import categorize_items
 from finance_pipeline.loaders import amazon_order_history_reporter
+from finance_pipeline.mappings import accept_mapping_candidate, reject_mapping_candidate
 from finance_pipeline.storage import MemoryStateStore
 
 
@@ -144,3 +145,48 @@ class CountingMappingStore(MemoryStateStore):
         key = (mapping_type, mapping_key)
         self.get_calls[key] = self.get_calls.get(key, 0) + 1
         return super().get_mapping(mapping_type, mapping_key)
+
+
+def test_accept_mapping_candidate_promotes_reviewed_mapping():
+    store = MemoryStateStore()
+    store.upsert_mapping_candidate(
+        {
+            "candidate_id": "candidate-1",
+            "mapping_type": "description",
+            "mapping_key": "target:mystery object",
+            "reason": "unknown_category",
+            "status": "needs_review",
+            "original_item_description": "Mystery Object",
+        }
+    )
+
+    accepted = accept_mapping_candidate("candidate-1", "Household", store, reviewed_by="test")
+
+    mapping = store.get_mapping("description", "target:mystery object")
+    assert mapping["category"] == "Household"
+    assert mapping["source"] == "candidate_review"
+    assert mapping["confidence"] == "manual_review"
+    assert mapping["reviewed"] is True
+    assert mapping["original_item_description"] == "Mystery Object"
+    assert mapping["accepted_candidate_id"] == "candidate-1"
+    assert accepted["status"] == "accepted"
+    assert store.get_mapping_candidate("candidate-1")["accepted_category"] == "Household"
+
+
+def test_reject_mapping_candidate_marks_review_status():
+    store = MemoryStateStore()
+    store.upsert_mapping_candidate(
+        {
+            "candidate_id": "candidate-1",
+            "mapping_type": "description",
+            "mapping_key": "target:mystery object",
+            "reason": "unknown_category",
+            "status": "needs_review",
+        }
+    )
+
+    rejected = reject_mapping_candidate("candidate-1", store, reviewed_by="test", note="not enough info")
+
+    assert rejected["status"] == "rejected"
+    assert rejected["review_note"] == "not enough info"
+    assert store.get_mapping_candidate("candidate-1")["status"] == "rejected"

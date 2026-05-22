@@ -113,12 +113,122 @@ def test_run_month_can_skip_source_date_check(monkeypatch):
     assert called["source_dates"] is False
 
 
+def test_cli_accept_mapping_candidate_promotes_candidate(monkeypatch):
+    import finance_pipeline.cli as cli
+
+    store = FakeMappingStore()
+    store.upsert_mapping_candidate(
+        {
+            "candidate_id": "candidate-1",
+            "mapping_type": "description",
+            "mapping_key": "target:mystery object",
+            "reason": "unknown_category",
+            "status": "needs_review",
+        }
+    )
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: store)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "accept-mapping-candidate",
+            "--candidate-id",
+            "candidate-1",
+            "--category",
+            "Household",
+            "--firestore-project",
+            "test-project",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert store.get_mapping("description", "target:mystery object")["category"] == "Household"
+    assert store.get_mapping_candidate("candidate-1")["status"] == "accepted"
+
+
+def test_cli_accept_mapping_candidate_rejects_unknown_taxonomy_category(monkeypatch):
+    import finance_pipeline.cli as cli
+
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: FakeMappingStore())
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "accept-mapping-candidate",
+            "--candidate-id",
+            "candidate-1",
+            "--category",
+            "Not_A_Category",
+            "--firestore-project",
+            "test-project",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Category is not in taxonomy" in result.output
+
+
+def test_cli_reject_mapping_candidate_marks_candidate_rejected(monkeypatch):
+    import finance_pipeline.cli as cli
+    store = FakeMappingStore()
+    store.upsert_mapping_candidate(
+        {
+            "candidate_id": "candidate-1",
+            "mapping_type": "description",
+            "mapping_key": "target:mystery object",
+            "reason": "unknown_category",
+            "status": "needs_review",
+        }
+    )
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: store)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "reject-mapping-candidate",
+            "--candidate-id",
+            "candidate-1",
+            "--firestore-project",
+            "test-project",
+            "--note",
+            "not enough info",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert store.get_mapping_candidate("candidate-1")["status"] == "rejected"
+    assert store.get_mapping_candidate("candidate-1")["review_note"] == "not enough info"
+
+
 class FakeMappingStore:
+    def __init__(self):
+        self.category_mappings = {}
+        self.mapping_candidates = {}
+
     def close(self):
         return None
 
+    def upsert_mapping(self, mapping_type, mapping_key, category, source, confidence="manual", reviewed=True, metadata=None):
+        record = {
+            "mapping_type": mapping_type,
+            "mapping_key": mapping_key,
+            "category": category,
+            "source": source,
+            "confidence": confidence,
+            "reviewed": reviewed,
+        }
+        if metadata:
+            record.update(metadata)
+        self.category_mappings[(mapping_type, mapping_key)] = record
+
+    def get_mapping(self, mapping_type, mapping_key):
+        return self.category_mappings.get((mapping_type, mapping_key))
+
     def list_mappings(self):
-        return [
+        return list(self.category_mappings.values()) or [
             {
                 "mapping_type": "description",
                 "mapping_key": "target:whole milk",
@@ -126,8 +236,14 @@ class FakeMappingStore:
             }
         ]
 
+    def upsert_mapping_candidate(self, candidate):
+        self.mapping_candidates[candidate["candidate_id"]] = candidate
+
+    def get_mapping_candidate(self, candidate_id):
+        return self.mapping_candidates.get(candidate_id)
+
     def list_mapping_candidates(self):
-        return [
+        return list(self.mapping_candidates.values()) or [
             {
                 "candidate_id": "candidate-1",
                 "mapping_type": "description",

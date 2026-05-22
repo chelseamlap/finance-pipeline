@@ -8,11 +8,11 @@ from typing import Optional
 import pandas as pd
 import typer
 
-from .categorize import categorize_items
+from .categorize import categorize_items, taxonomy
 from .export import write_month_outputs
 from .logging_config import configure_logging
 from .dedupe import dedupe_retail_items
-from .mappings import export_mapping_tables
+from .mappings import accept_mapping_candidate, export_mapping_tables, reject_mapping_candidate
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
 from .source_dates import SourceDateRecord, collect_source_max_dates
@@ -130,6 +130,44 @@ def export_mappings(
     candidates.to_csv(candidates_path, index=False)
     typer.echo(f"Wrote {len(mappings)} mapping(s) to {mappings_path}")
     typer.echo(f"Wrote {len(candidates)} mapping candidate(s) to {candidates_path}")
+
+
+@app.command("accept-mapping-candidate")
+def accept_candidate(
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    category: str = typer.Option(..., "--category"),
+    firestore_project: str = typer.Option(..., "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    reviewed_by: str = typer.Option("manual", "--reviewed-by"),
+) -> None:
+    if category not in taxonomy():
+        raise typer.BadParameter(f"Category is not in taxonomy: {category}")
+    store = FirestoreStateStore(firestore_project, firestore_prefix)
+    try:
+        candidate = accept_mapping_candidate(candidate_id, category, store, reviewed_by=reviewed_by)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    finally:
+        store.close()
+    typer.echo(f"Accepted candidate {candidate_id}: {candidate['mapping_type']}:{candidate['mapping_key']} -> {category}")
+
+
+@app.command("reject-mapping-candidate")
+def reject_candidate(
+    candidate_id: str = typer.Option(..., "--candidate-id"),
+    firestore_project: str = typer.Option(..., "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    reviewed_by: str = typer.Option("manual", "--reviewed-by"),
+    note: str = typer.Option("", "--note"),
+) -> None:
+    store = FirestoreStateStore(firestore_project, firestore_prefix)
+    try:
+        reject_mapping_candidate(candidate_id, store, reviewed_by=reviewed_by, note=note)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    finally:
+        store.close()
+    typer.echo(f"Rejected candidate {candidate_id}")
 
 
 @app.command()

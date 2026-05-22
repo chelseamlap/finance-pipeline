@@ -155,6 +155,73 @@ def export_mapping_tables(mapping_store) -> tuple[pd.DataFrame, pd.DataFrame]:
     return mappings, candidates
 
 
+def accept_mapping_candidate(candidate_id: str, category: str, mapping_store, reviewed_by: str = "manual") -> dict:
+    candidate = mapping_store.get_mapping_candidate(candidate_id)
+    if not candidate:
+        raise ValueError(f"Unknown mapping candidate: {candidate_id}")
+    metadata = _candidate_audit_metadata(candidate)
+    metadata.update(
+        {
+            "accepted_candidate_id": candidate_id,
+            "accepted_from_reason": clean_string(candidate.get("reason")),
+            "accepted_reviewed_by": reviewed_by,
+        }
+    )
+    mapping_store.upsert_mapping(
+        candidate["mapping_type"],
+        candidate["mapping_key"],
+        category,
+        source="candidate_review",
+        confidence="manual_review",
+        reviewed=True,
+        metadata=metadata,
+    )
+    resolved = dict(candidate)
+    resolved.update(
+        {
+            "status": "accepted",
+            "accepted_category": category,
+            "reviewed_by": reviewed_by,
+        }
+    )
+    mapping_store.upsert_mapping_candidate(resolved)
+    return resolved
+
+
+def reject_mapping_candidate(candidate_id: str, mapping_store, reviewed_by: str = "manual", note: str = "") -> dict:
+    candidate = mapping_store.get_mapping_candidate(candidate_id)
+    if not candidate:
+        raise ValueError(f"Unknown mapping candidate: {candidate_id}")
+    rejected = dict(candidate)
+    rejected.update(
+        {
+            "status": "rejected",
+            "reviewed_by": reviewed_by,
+            "review_note": note,
+        }
+    )
+    mapping_store.upsert_mapping_candidate(rejected)
+    return rejected
+
+
+def _candidate_audit_metadata(candidate: dict) -> dict[str, object]:
+    audit_keys = {
+        "original_item_description",
+        "normalized_item_description",
+        "retailer",
+        "source_adapter",
+        "source_owner",
+        "item_id",
+        "order_id",
+        "receipt_id",
+        "file_source",
+        "import_batch_id",
+        "created_from_rule_id",
+        "evidence",
+    }
+    return {key: value for key, value in candidate.items() if key in audit_keys and clean_string(value)}
+
+
 def _historical_mapping_metadata(row: dict) -> dict[str, object]:
     original_description = clean_string(row.get("item_description_raw"))
     normalized_description = normalize_text(original_description or row.get("item_description_normalized"))

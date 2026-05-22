@@ -55,6 +55,9 @@ class MemoryStateStore:
         record = json.loads(json.dumps(candidate, default=_json_default))
         self.mapping_candidates[str(record["candidate_id"])] = record
 
+    def get_mapping_candidate(self, candidate_id: str) -> dict | None:
+        return self.mapping_candidates.get(candidate_id)
+
     def list_mapping_candidates(self) -> list[dict]:
         return sorted(self.mapping_candidates.values(), key=lambda row: (row.get("status", ""), row.get("candidate_id", "")))
 
