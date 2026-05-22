@@ -20,6 +20,7 @@ class FirestoreStateStore:
             raise RuntimeError("Install google-cloud-firestore to use FirestoreStateStore.") from exc
 
         self.firestore = firestore
+        self.project = project
         self.client = firestore.Client(project=project)
         self.collection_prefix = collection_prefix
 
@@ -56,26 +57,41 @@ class FirestoreStateStore:
         }
         if metadata:
             payload.update(metadata)
-        self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).set(payload, merge=True)
+        try:
+            self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).set(payload, merge=True)
+        except Exception as exc:
+            raise _friendly_firestore_error(exc, self.project) from exc
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
         doc_id = stable_hash([mapping_type, mapping_key], length=40)
-        snapshot = self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).get()
+        try:
+            snapshot = self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).get()
+        except Exception as exc:
+            raise _friendly_firestore_error(exc, self.project) from exc
         return snapshot.to_dict() if snapshot.exists else None
 
     def list_mappings(self) -> list[dict]:
-        return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_category_mappings").stream()]
+        try:
+            return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_category_mappings").stream()]
+        except Exception as exc:
+            raise _friendly_firestore_error(exc, self.project) from exc
 
     def upsert_mapping_candidate(self, candidate: dict[str, Any]) -> None:
         payload = dict(candidate)
         payload["updated_at"] = _now()
-        self.client.collection(f"{self.collection_prefix}_mapping_candidates").document(str(candidate["candidate_id"])).set(
-            payload,
-            merge=True,
-        )
+        try:
+            self.client.collection(f"{self.collection_prefix}_mapping_candidates").document(str(candidate["candidate_id"])).set(
+                payload,
+                merge=True,
+            )
+        except Exception as exc:
+            raise _friendly_firestore_error(exc, self.project) from exc
 
     def list_mapping_candidates(self) -> list[dict]:
-        return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_mapping_candidates").stream()]
+        try:
+            return [snapshot.to_dict() for snapshot in self.client.collection(f"{self.collection_prefix}_mapping_candidates").stream()]
+        except Exception as exc:
+            raise _friendly_firestore_error(exc, self.project) from exc
 
     def _upsert_record_state(self, collection_name: str, id_column: str, df: pd.DataFrame, run_id: str) -> int:
         if df.empty:
@@ -110,3 +126,14 @@ class FirestoreStateStore:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _friendly_firestore_error(exc: Exception, project: str | None) -> Exception:
+    text = str(exc)
+    if "database (default) does not exist" not in text.lower():
+        return exc
+    project_arg = f" --project {project}" if project else ""
+    return RuntimeError(
+        "Firestore has not been initialized for this project. Create the default Firestore Native database once with: "
+        f"gcloud firestore databases create{project_arg} --location=nam5"
+    )

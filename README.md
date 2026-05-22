@@ -78,6 +78,12 @@ Enable the APIs used by the pipeline:
 gcloud services enable sheets.googleapis.com firestore.googleapis.com bigquery.googleapis.com
 ```
 
+Create the default Firestore Native database once. Firestore database location is effectively a project-level choice, so use the intended region before any production data is written:
+
+```bash
+gcloud firestore databases create --project spending-pipeline --location=nam5
+```
+
 Create or reuse the local service account:
 
 ```bash

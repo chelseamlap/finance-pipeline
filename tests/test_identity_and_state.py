@@ -3,7 +3,7 @@ import shutil
 
 from finance_pipeline.categorize import categorize_items
 from finance_pipeline.loaders import orderpro
-from finance_pipeline.storage.firestore_store import FirestoreStateStore
+from finance_pipeline.storage.firestore_store import FirestoreStateStore, _friendly_firestore_error
 from finance_pipeline.storage import MemoryStateStore
 
 
@@ -126,6 +126,15 @@ def test_firestore_mapping_candidate_upsert_uses_queue_collection():
     assert collection.doc_id == "candidate-1"
     assert collection.last_payload["reason"] == "unknown_category"
     assert collection.last_payload["updated_at"]
+
+
+def test_firestore_missing_database_error_is_actionable():
+    exc = Exception("404 The database (default) does not exist for project spending-pipeline")
+
+    friendly = _friendly_firestore_error(exc, "spending-pipeline")
+
+    assert isinstance(friendly, RuntimeError)
+    assert "gcloud firestore databases create --project spending-pipeline --location=nam5" in str(friendly)
 
 
 class FakeFirestoreClient:
