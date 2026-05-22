@@ -90,6 +90,29 @@ def test_cli_export_mappings_writes_mapping_review_files(tmp_path, monkeypatch):
     assert "unknown_category" in (tmp_path / "mapping_candidates.csv").read_text()
 
 
+def test_run_month_can_skip_source_date_check(monkeypatch):
+    import pandas as pd
+    import finance_pipeline.cli as cli
+
+    called = {"source_dates": False}
+
+    def fail_source_dates():
+        called["source_dates"] = True
+        raise AssertionError("source date check should be skipped")
+
+    monkeypatch.setattr(cli, "collect_source_max_dates", fail_source_dates)
+    monkeypatch.setattr(cli, "_load_all_sources", lambda import_batch_id: (pd.DataFrame(), pd.DataFrame()))
+    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None: (items, pd.DataFrame()))
+    monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
+    monkeypatch.setattr(cli, "write_month_outputs", lambda *args, **kwargs: None)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["run-month", "--month", "2026-05", "--skip-source-date-check"])
+
+    assert result.exit_code == 0, result.output
+    assert called["source_dates"] is False
+
+
 class FakeMappingStore:
     def close(self):
         return None

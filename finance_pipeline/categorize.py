@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .mappings import enqueue_mapping_candidate, first_saved_mapping, save_historical_item_mapping
+from .mappings import CachedMappingStore, enqueue_mapping_candidate, first_saved_mapping, save_historical_item_mapping
 from .normalize import load_yaml, normalize_text, spending_class_for_retail_category
 
 
@@ -15,6 +15,8 @@ def taxonomy() -> set[str]:
 def categorize_items(df: pd.DataFrame, mapping_store=None) -> tuple[pd.DataFrame, pd.DataFrame]:
     if df.empty:
         return df, pd.DataFrame()
+    if mapping_store is not None and not isinstance(mapping_store, CachedMappingStore):
+        mapping_store = CachedMappingStore(mapping_store)
     rules = load_yaml("merchant_rules.yaml")
     allowed = taxonomy()
     out = df.copy()

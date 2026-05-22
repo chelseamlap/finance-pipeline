@@ -6,6 +6,48 @@ from .identity import item_mapping_keys_for_retail_item, mapping_keys_for_retail
 from .normalize import clean_string, normalize_text, spending_class_for_retail_category
 
 
+class CachedMappingStore:
+    def __init__(self, mapping_store) -> None:
+        self.mapping_store = mapping_store
+        self.mapping_cache: dict[tuple[str, str], dict | None] = {}
+        self.candidate_ids: set[str] = set()
+        for mapping in getattr(mapping_store, "list_mappings", lambda: [])():
+            key = (str(mapping.get("mapping_type", "")), str(mapping.get("mapping_key", "")))
+            if all(key):
+                self.mapping_cache[key] = mapping
+
+    def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
+        key = (mapping_type, mapping_key)
+        if key not in self.mapping_cache:
+            self.mapping_cache[key] = self.mapping_store.get_mapping(mapping_type, mapping_key)
+        return self.mapping_cache[key]
+
+    def upsert_mapping(self, mapping_type: str, mapping_key: str, category: str, source: str, **kwargs) -> None:
+        self.mapping_store.upsert_mapping(mapping_type, mapping_key, category, source, **kwargs)
+        record = {
+            "mapping_type": mapping_type,
+            "mapping_key": mapping_key,
+            "category": category,
+            "source": source,
+            "confidence": kwargs.get("confidence", "manual"),
+            "reviewed": kwargs.get("reviewed", True),
+        }
+        metadata = kwargs.get("metadata")
+        if metadata:
+            record.update(metadata)
+        self.mapping_cache[(mapping_type, mapping_key)] = record
+
+    def upsert_mapping_candidate(self, candidate: dict) -> None:
+        candidate_id = str(candidate["candidate_id"])
+        if candidate_id in self.candidate_ids:
+            return
+        self.mapping_store.upsert_mapping_candidate(candidate)
+        self.candidate_ids.add(candidate_id)
+
+    def __getattr__(self, name: str):
+        return getattr(self.mapping_store, name)
+
+
 def apply_saved_mappings(df: pd.DataFrame, mapping_store) -> pd.DataFrame:
     if df.empty or mapping_store is None:
         return df

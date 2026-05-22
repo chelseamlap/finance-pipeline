@@ -122,3 +122,25 @@ def test_conflicting_historical_mapping_is_queued_for_review():
     assert candidate["reason"] == "mapping_conflict"
     assert candidate["suggested_category"] == "Groceries"
     assert candidate["evidence"] == "Saved mapping category is Health_Personal_Care"
+
+
+def test_categorization_caches_mapping_lookups_for_repeated_items():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    repeated = df.iloc[[0, 0]].copy()
+    repeated.index = [0, 1]
+    store = CountingMappingStore()
+
+    categorize_items(repeated, mapping_store=store)
+
+    assert store.get_calls[("asin", f"amazon:{df.loc[0, 'asin']}")] == 1
+
+
+class CountingMappingStore(MemoryStateStore):
+    def __init__(self):
+        super().__init__()
+        self.get_calls = {}
+
+    def get_mapping(self, mapping_type, mapping_key):
+        key = (mapping_type, mapping_key)
+        self.get_calls[key] = self.get_calls.get(key, 0) + 1
+        return super().get_mapping(mapping_type, mapping_key)

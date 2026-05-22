@@ -52,6 +52,7 @@ def ingest(
 @app.command("run-month")
 def run_month(
     month: str = typer.Option(..., "--month"),
+    check_source_dates: bool = typer.Option(True, "--check-source-dates/--skip-source-date-check", help="Print raw source max dates before loading sources."),
     firestore_project: Optional[str] = typer.Option(None, "--firestore-project", help="Google Cloud project for Firestore operational state."),
     firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
     bigquery_project: Optional[str] = typer.Option(None, "--bigquery-project", help="Google Cloud project for BigQuery analytics tables."),
@@ -59,7 +60,8 @@ def run_month(
     bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
 ) -> None:
     import_batch_id = f"month-{month}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
-    _echo_source_max_dates(collect_source_max_dates())
+    if check_source_dates:
+        _echo_source_max_dates(collect_source_max_dates())
     state_store = FirestoreStateStore(firestore_project, firestore_prefix) if firestore_project else None
     analytics_store = (
         BigQueryAnalyticsStore(bigquery_project, bigquery_dataset, bigquery_location) if bigquery_project else None
