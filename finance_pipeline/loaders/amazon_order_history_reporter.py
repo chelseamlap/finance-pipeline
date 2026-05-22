@@ -47,9 +47,12 @@ def _load_order_totals(path: Path) -> dict[str, dict]:
             if not order_id or order_id.lower() == "order id":
                 continue
             orders[order_id] = {
+                "transaction_date": data.get("date"),
+                "file_source": str(file),
                 "source_tax_total": money(data.get("tax", "0")),
                 "source_shipping_total": money(data.get("shipping", "0")) - money(data.get("shipping_refund", "0")),
-                "source_discount_total": money(data.get("refund", "0")) + money(data.get("gift", "0")),
+                "source_discount_total": money(data.get("gift", "0")),
+                "refund_total": money(data.get("refund", "0")),
                 "source_grand_total": money(data.get("total")),
             }
     return orders
@@ -58,6 +61,7 @@ def _load_order_totals(path: Path) -> dict[str, dict]:
 def _load_item_level_exports(path: Path, import_batch_id: str, order_totals: dict[str, dict]) -> pd.DataFrame:
     rows: list[dict] = []
     ordinals = DuplicateOrdinalTracker()
+    item_order_ids: set[str] = set()
     rejected_dir = Path("data/rejected")
     for file in source_files(path):
         raw = read_file(file)
@@ -75,6 +79,7 @@ def _load_item_level_exports(path: Path, import_batch_id: str, order_totals: dic
                 if not order_id or not desc:
                     reject_rows([data], file, "missing order id or description", rejected_dir)
                     continue
+                item_order_ids.add(order_id)
                 quantity = money(data.get("quantity", "1"))
                 unit_price = money(data.get("unit_price", "0"))
                 subtotal = quantity * unit_price
@@ -92,12 +97,15 @@ def _load_item_level_exports(path: Path, import_batch_id: str, order_totals: dic
                     "asin": str_or_blank(data, "asin"),
                     "quantity": quantity,
                     "unit_price": unit_price,
+                    "item_subtotal_raw": subtotal,
+                    "line_subtotal_derived": subtotal,
                     "item_subtotal": subtotal,
                     "allocated_tax": money("0"),
                     "allocated_shipping": money("0"),
                     "allocated_fee": money("0"),
                     "item_discount": money("0"),
                     "allocated_total": subtotal,
+                    "item_subtotal_derivation_notes": "",
                     "source_tax_total": totals.get("source_tax_total"),
                     "source_shipping_total": totals.get("source_shipping_total"),
                     "source_discount_total": totals.get("source_discount_total"),
@@ -117,8 +125,64 @@ def _load_item_level_exports(path: Path, import_batch_id: str, order_totals: dic
                 )
             except Exception as exc:
                 reject_rows([data], file, f"row parse error: {exc}", rejected_dir)
+    _append_refund_adjustment_rows(rows, ordinals, order_totals, item_order_ids, import_batch_id)
     df = pd.DataFrame(rows)
     return allocate_order_amounts(df) if not df.empty else df
+
+
+def _append_refund_adjustment_rows(
+    rows: list[dict],
+    ordinals: DuplicateOrdinalTracker,
+    order_totals: dict[str, dict],
+    item_order_ids: set[str],
+    import_batch_id: str,
+) -> None:
+    for order_id in sorted(item_order_ids):
+        totals = order_totals.get(order_id, {})
+        refund = abs(money(totals.get("refund_total", "0")))
+        if refund == money("0"):
+            continue
+        adjustment_total = -refund
+        transaction_date = totals.get("transaction_date")
+        if not transaction_date:
+            continue
+        base = {
+            "source_adapter": "amazon_order_history_reporter",
+            "retailer": "amazon",
+            "source_owner": infer_source_owner(Path(str(totals.get("file_source", "")))),
+            "order_id": f"{order_id}:refund",
+            "transaction_date": parse_date(transaction_date),
+            "merchant_raw": "amazon",
+            "merchant_normalized": normalize_merchant("amazon"),
+            "item_description_raw": f"Amazon refund adjustment for order {order_id}",
+            "item_description_normalized": normalize_text(f"Amazon refund adjustment for order {order_id}"),
+            "quantity": money("1"),
+            "unit_price": adjustment_total,
+            "item_subtotal_raw": adjustment_total,
+            "line_subtotal_derived": adjustment_total,
+            "item_subtotal": adjustment_total,
+            "allocated_tax": money("0"),
+            "allocated_shipping": money("0"),
+            "allocated_fee": money("0"),
+            "item_discount": money("0"),
+            "allocated_total": adjustment_total,
+            "item_subtotal_derivation_notes": "amazon_refund_adjustment_line",
+            "source_grand_total": adjustment_total,
+            "file_source": str(totals.get("file_source", "")),
+            "import_batch_id": import_batch_id,
+            "source_category_raw": "refund-adjustment",
+            "needs_review": True,
+            "review_reason": "amazon_refund_adjustment_unmatched",
+        }
+        identity_parts = retail_identity_parts(base)
+        ordinal = ordinals.next(identity_parts)
+        rows.append(
+            CanonicalRetailItem(
+                item_id=stable_hash([*identity_parts, ordinal]),
+                row_fingerprint=row_fingerprint(base, base.keys()),
+                **base,
+            ).model_dump()
+        )
 
 
 def _normalize_item_columns(raw: pd.DataFrame) -> pd.DataFrame:

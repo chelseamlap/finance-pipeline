@@ -63,12 +63,15 @@ class CanonicalRetailItem(BaseModel):
     upc: str = ""
     quantity: Decimal = Decimal("1")
     unit_price: Decimal = Decimal("0")
+    item_subtotal_raw: Decimal = Decimal("0")
+    line_subtotal_derived: Decimal = Decimal("0")
     item_subtotal: Decimal = Decimal("0")
     item_discount: Decimal = Decimal("0")
     allocated_tax: Decimal = Decimal("0")
     allocated_shipping: Decimal = Decimal("0")
     allocated_fee: Decimal = Decimal("0")
     allocated_total: Decimal = Decimal("0")
+    item_subtotal_derivation_notes: str = ""
     component_allocation_notes: str = ""
     dedupe_notes: str = ""
     source_order_total: Optional[Decimal] = None
@@ -124,12 +127,15 @@ RETAIL_ITEM_COLUMNS = [
     "upc",
     "quantity",
     "unit_price",
+    "item_subtotal_raw",
+    "line_subtotal_derived",
     "item_subtotal",
     "item_discount",
     "allocated_tax",
     "allocated_shipping",
     "allocated_fee",
     "allocated_total",
+    "item_subtotal_derivation_notes",
     "component_allocation_notes",
     "dedupe_notes",
     "source_order_total",

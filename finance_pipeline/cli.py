@@ -69,6 +69,9 @@ def run_month(
         categorized_items,
         date_window_days=int(cfg.get("date_window_days", 5)),
         amount_tolerance=Decimal(str(cfg.get("amount_tolerance", 0.03))),
+        match_amount_tolerance=Decimal(str(cfg.get("match_amount_tolerance", cfg.get("amount_tolerance", 0.03)))),
+        amazon_extended_date_window_days=cfg.get("amazon_extended_date_window_days"),
+        amazon_extended_date_min_amount=Decimal(str(cfg.get("amazon_extended_date_min_amount", 10.00))),
     )
     write_month_outputs(month, Path("data/processed") / month, transactions, categorized_items, rec, coverage)
     if state_store is not None:
@@ -110,6 +113,7 @@ def export(month: str = typer.Option(..., "--month")) -> None:
         "canonical_retail_items.csv",
         "monthly_category_summary.csv",
         "retailer_summary.csv",
+        "store_reconciliation_summary.csv",
         "reconciliation_summary.csv",
         "reconciliation_detail.csv",
         "unmatched_simplifi_transactions.csv",

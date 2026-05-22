@@ -31,3 +31,6 @@ sources:
 reconciliation:
   date_window_days: 5
   amount_tolerance: 0.03
+  match_amount_tolerance: 0.05
+  amazon_extended_date_window_days: 10
+  amazon_extended_date_min_amount: 10.00

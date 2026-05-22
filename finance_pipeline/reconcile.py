@@ -202,13 +202,18 @@ def reconcile(
     items: pd.DataFrame,
     date_window_days: int = 5,
     amount_tolerance: Decimal = Decimal("0.03"),
+    match_amount_tolerance: Decimal | None = None,
+    amazon_extended_date_window_days: int | None = None,
+    amazon_extended_date_min_amount: Decimal = Decimal("10.00"),
 ) -> dict[str, pd.DataFrame]:
+    transaction_match_tolerance = match_amount_tolerance or amount_tolerance
     items = allocate_order_amounts(items, amount_tolerance) if not items.empty else items
     items = _reset_reconciliation_review_state(items)
     detail_rows: list[dict] = []
     order_rows = _orders(items)
     matched_txn_ids: set[str] = set()
     matched_order_keys: set[tuple[str, str]] = set()
+    no_bank_order_keys: set[tuple[str, str]] = set()
 
     for _, order in order_rows.iterrows():
         item_derived_total = _dec(order["item_derived_total"])
@@ -220,8 +225,20 @@ def reconcile(
         mismatch_diagnostic, mismatch_basis = _diagnose_total_mismatch(order, item_vs_retailer_difference, base_difference, amount_tolerance) if status == "total_mismatch" else ("", "")
 
         match_id = ""
-        if not transactions.empty:
-            match_id = _match_transaction(transactions, order, amount_tolerance, date_window_days, matched_txn_ids)
+        no_bank_expected = _is_no_bank_transaction_expected(item_derived_total, retailer_source_total, amount_tolerance)
+        if no_bank_expected:
+            status = "no_bank_transaction_expected"
+            no_bank_order_keys.add((str(order["retailer"]), str(order["order_id"])))
+        elif not transactions.empty:
+            match_id = _match_transaction(
+                transactions,
+                order,
+                transaction_match_tolerance,
+                date_window_days,
+                matched_txn_ids,
+                amazon_extended_date_window_days=amazon_extended_date_window_days,
+                amazon_extended_date_min_amount=amazon_extended_date_min_amount,
+            )
         simplifi_amount = _matched_simplifi_amount(transactions, match_id) if match_id else None
         simplifi_reconciled_total = (-simplifi_amount).quantize(TWOPLACES) if simplifi_amount is not None else None
         item_vs_simplifi_difference = (item_derived_total - simplifi_reconciled_total).quantize(TWOPLACES) if simplifi_reconciled_total is not None else None
@@ -231,7 +248,7 @@ def reconcile(
             matched_txn_ids.add(match_id)
             matched_order_keys.add((str(order["retailer"]), str(order["order_id"])))
             items.loc[(items["retailer"] == order["retailer"]) & (items["order_id"] == order["order_id"]), "matched_simplifi_transaction_id"] = match_id
-        else:
+        elif not no_bank_expected:
             status = "unmatched_transaction" if status == "ok" else f"{status}; unmatched_transaction"
 
         if "total_mismatch" in status or "unmatched_transaction" in status:
@@ -278,12 +295,13 @@ def reconcile(
         [
             {"metric": "retail_orders", "value": len(order_rows)},
             {"metric": "matched_orders", "value": len(matched_order_keys)},
-            {"metric": "unmatched_orders", "value": max(len(order_rows) - len(matched_order_keys), 0)},
+            {"metric": "no_bank_transaction_expected_orders", "value": len(no_bank_order_keys)},
+            {"metric": "unmatched_orders", "value": max(len(order_rows) - len(matched_order_keys) - len(no_bank_order_keys), 0)},
             {"metric": "items_needing_review", "value": int(items.get("needs_review", pd.Series(dtype=bool)).fillna(False).sum()) if not items.empty else 0},
         ]
     )
     unmatched_simplifi = transactions[~transactions["transaction_id"].isin(matched_txn_ids)].copy() if not transactions.empty else pd.DataFrame()
-    unmatched_orders = detail[detail["matched_simplifi_transaction_id"] == ""].copy() if not detail.empty else pd.DataFrame()
+    unmatched_orders = detail[detail["status"].fillna("").astype(str).str.contains("unmatched_transaction")].copy() if not detail.empty else pd.DataFrame()
     review = items[items["needs_review"].fillna(False)].copy() if not items.empty else pd.DataFrame()
     return {
         "items": items,
@@ -293,6 +311,10 @@ def reconcile(
         "unmatched_retail_orders": unmatched_orders,
         "items_needing_review": review,
     }
+
+
+def _is_no_bank_transaction_expected(item_derived_total: Decimal, retailer_source_total: Decimal | None, tolerance: Decimal) -> bool:
+    return retailer_source_total is not None and abs(item_derived_total) <= tolerance and abs(retailer_source_total) <= tolerance
 
 
 def _reset_reconciliation_review_state(items: pd.DataFrame) -> pd.DataFrame:
@@ -445,6 +467,8 @@ def _match_transaction(
     tolerance: Decimal,
     date_window_days: int,
     already_matched: set[str] | None = None,
+    amazon_extended_date_window_days: int | None = None,
+    amazon_extended_date_min_amount: Decimal = Decimal("10.00"),
 ) -> str:
     order_date = pd.to_datetime(order["transaction_date"])
     retailer = normalize_merchant(order.get("retailer", ""))
@@ -453,13 +477,26 @@ def _match_transaction(
     candidates = transactions.copy()
     candidates["_date"] = pd.to_datetime(candidates["posted_date"])
     candidates["_simplifi_reconciled_total"] = candidates["amount"].apply(lambda value: (-_dec(value)).quantize(TWOPLACES))
+    candidates["_date_delta"] = abs((candidates["_date"] - order_date).dt.days)
+    candidates["_amount_delta"] = candidates["_simplifi_reconciled_total"].apply(lambda value: abs(value - amount))
     candidates = candidates[
-        (abs((candidates["_date"] - order_date).dt.days) <= date_window_days)
-        & (abs(candidates["_simplifi_reconciled_total"] - amount) <= tolerance)
+        (candidates["_amount_delta"] <= tolerance)
         & (candidates["merchant_normalized"].astype(str).str.contains(retailer, case=False, na=False))
     ]
     if already_matched:
         candidates = candidates[~candidates["transaction_id"].isin(already_matched)]
-    if candidates.empty:
-        return ""
-    return str(candidates.sort_values("_date").iloc[0]["transaction_id"])
+    primary = candidates[candidates["_date_delta"] <= date_window_days]
+    if not primary.empty:
+        return str(primary.sort_values(["_amount_delta", "_date_delta", "_date"]).iloc[0]["transaction_id"])
+
+    if (
+        retailer == "amazon"
+        and amazon_extended_date_window_days is not None
+        and amazon_extended_date_window_days > date_window_days
+        and abs(amount) >= amazon_extended_date_min_amount
+    ):
+        extended = candidates[candidates["_date_delta"] <= amazon_extended_date_window_days]
+        if not extended.empty:
+            return str(extended.sort_values(["_amount_delta", "_date_delta", "_date"]).iloc[0]["transaction_id"])
+
+    return ""

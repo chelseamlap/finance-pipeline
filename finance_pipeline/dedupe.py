@@ -86,7 +86,7 @@ def _collapse_same_order_duplicate_items(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     out = df.copy()
-    for money_column in ["item_subtotal", "allocated_total"]:
+    for money_column in ["item_subtotal", "line_subtotal_derived", "allocated_total"]:
         if money_column in out.columns:
             out[money_column] = out[money_column].astype("object")
     keep_indices: list[int] = out.index[~orderpro_mask].tolist()
@@ -99,6 +99,13 @@ def _collapse_same_order_duplicate_items(df: pd.DataFrame) -> pd.DataFrame:
         duplicate_notes.update(notes)
         for idx, subtotal in subtotal_overrides.items():
             out.at[idx, "item_subtotal"] = subtotal
+            if "line_subtotal_derived" in out.columns:
+                out.at[idx, "line_subtotal_derived"] = subtotal
+            if "item_subtotal_derivation_notes" in out.columns:
+                out.at[idx, "item_subtotal_derivation_notes"] = _append_note(
+                    _strip_note(out.at[idx, "item_subtotal_derivation_notes"], "item_subtotal_derived_from_quantity_times_unit_price"),
+                    "item_subtotal_derived_from_source_order_total",
+                )
             if "allocated_total" in out.columns:
                 out.at[idx, "allocated_total"] = subtotal
 
@@ -254,3 +261,11 @@ def _append_note(existing: object, note: str) -> str:
     if note in text:
         return text
     return f"{text}; {note}"
+
+
+def _strip_note(existing: object, note: str) -> str:
+    text = "" if existing is None else str(existing).strip()
+    if not text or text.lower() == "nan":
+        return ""
+    parts = [part.strip() for part in text.split(";")]
+    return "; ".join(part for part in parts if part and part != note)

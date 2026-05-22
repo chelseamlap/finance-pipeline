@@ -22,6 +22,17 @@ LOGGER = logging.getLogger(__name__)
 REQUIRED = {"transaction_date", "item_description_raw"}
 
 
+def derive_line_subtotal(data: dict, quantity: Decimal, unit_price: Decimal) -> tuple[Decimal, Decimal, str]:
+    raw_subtotal = money(data.get("item_subtotal", "")) if clean_string(data.get("item_subtotal")) else quantity * unit_price
+    derived_subtotal = raw_subtotal
+    note = ""
+    quantity_unit_total = (quantity * unit_price).quantize(Decimal("0.01"))
+    if quantity > 1 and unit_price != 0 and abs(raw_subtotal - unit_price) <= Decimal("0.03"):
+        derived_subtotal = quantity_unit_total
+        note = "item_subtotal_derived_from_quantity_times_unit_price"
+    return raw_subtotal, derived_subtotal, note
+
+
 def load_retail_items(path: Path, import_batch_id: str, source_adapter: str, retailer: str) -> pd.DataFrame:
     rows: list[dict] = []
     rejected_dir = Path("data/rejected")
@@ -39,7 +50,7 @@ def load_retail_items(path: Path, import_batch_id: str, source_adapter: str, ret
                 description = str_or_blank(data, "item_description_raw")
                 quantity = money(data.get("quantity", "1"), Decimal("1"))
                 unit_price = money(data.get("unit_price", "0"))
-                subtotal = money(data.get("item_subtotal", "")) if clean_string(data.get("item_subtotal")) else (quantity * unit_price)
+                raw_subtotal, subtotal, subtotal_note = derive_line_subtotal(data, quantity, unit_price)
                 discount = money(data.get("item_discount", "0"))
                 tax = money(data.get("allocated_tax", "0"))
                 shipping = money(data.get("allocated_shipping", "0"))
@@ -63,12 +74,15 @@ def load_retail_items(path: Path, import_batch_id: str, source_adapter: str, ret
                     "upc": str_or_blank(data, "upc"),
                     "quantity": quantity,
                     "unit_price": unit_price,
+                    "item_subtotal_raw": raw_subtotal,
+                    "line_subtotal_derived": subtotal,
                     "item_subtotal": subtotal,
                     "item_discount": discount,
                     "allocated_tax": tax,
                     "allocated_shipping": shipping,
                     "allocated_fee": fee,
                     "allocated_total": subtotal - discount + tax + shipping + fee,
+                    "item_subtotal_derivation_notes": subtotal_note,
                     "source_order_total": _optional_money(data, "source_order_total"),
                     "source_tax_total": _optional_money(data, "source_tax_total"),
                     "source_discount_total": _optional_money(data, "source_discount_total"),

@@ -312,6 +312,56 @@ def test_positive_retailer_total_does_not_match_simplifi_refund():
     assert pd.isna(detail["simplifi_amount"])
 
 
+def test_zero_dollar_order_needs_no_bank_transaction():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-amazon-other",
+                "posted_date": "2026-01-05",
+                "merchant_normalized": "amazon",
+                "amount": -32.81,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "amazon",
+                "order_id": "amazon-zero",
+                "transaction_date": "2026-01-05",
+                "merchant_normalized": "amazon",
+                "item_subtotal": 37.98,
+                "item_discount": 39.88,
+                "allocated_tax": 1.90,
+                "allocated_shipping": 0,
+                "allocated_fee": 0,
+                "allocated_total": 0,
+                "source_tax_total": 1.90,
+                "source_discount_total": 39.88,
+                "source_shipping_total": 0,
+                "source_grand_total": 0,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Clothing",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items)
+    detail = rec["reconciliation_detail"].iloc[0]
+    summary = dict(rec["reconciliation_summary"].values)
+
+    assert detail["status"] == "no_bank_transaction_expected"
+    assert detail["matched_simplifi_transaction_id"] == ""
+    assert rec["unmatched_retail_orders"].empty
+    assert rec["items_needing_review"].empty
+    assert summary["matched_orders"] == 0
+    assert summary["no_bank_transaction_expected_orders"] == 1
+    assert summary["unmatched_orders"] == 0
+
+
 def test_negative_retailer_total_matches_simplifi_refund():
     import pandas as pd
 
@@ -350,6 +400,107 @@ def test_negative_retailer_total_matches_simplifi_refund():
     assert detail["simplifi_amount"] == Decimal("21.78")
     assert detail["simplifi_reconciled_total"] == Decimal("-21.78")
     assert detail["retailer_vs_simplifi_difference"] == Decimal("0.00")
+
+
+def test_match_tolerance_can_be_looser_than_accounting_tolerance():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-target-near-match",
+                "posted_date": "2026-01-21",
+                "merchant_normalized": "target",
+                "amount": -57.63,
+            }
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "target",
+                "order_id": "target-near-match",
+                "transaction_date": "2026-01-20",
+                "merchant_normalized": "target",
+                "item_subtotal": 57.68,
+                "allocated_total": 57.68,
+                "source_grand_total": 57.68,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            }
+        ]
+    )
+
+    rec = reconcile(transactions, items, amount_tolerance=Decimal("0.03"), match_amount_tolerance=Decimal("0.05"))
+    detail = rec["reconciliation_detail"].iloc[0]
+
+    assert detail["status"] == "ok"
+    assert detail["matched_simplifi_transaction_id"] == "txn-target-near-match"
+    assert detail["retailer_vs_simplifi_difference"] == Decimal("0.05")
+
+
+def test_amazon_extended_date_fallback_matches_larger_orders_only():
+    import pandas as pd
+
+    transactions = pd.DataFrame(
+        [
+            {
+                "transaction_id": "txn-amazon-large",
+                "posted_date": "2026-01-04",
+                "merchant_normalized": "amazon",
+                "amount": -76.88,
+            },
+            {
+                "transaction_id": "txn-amazon-small-suspicious",
+                "posted_date": "2026-01-04",
+                "merchant_normalized": "amazon",
+                "amount": -6.41,
+            },
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {
+                "retailer": "amazon",
+                "order_id": "amazon-large",
+                "transaction_date": "2026-01-14",
+                "merchant_normalized": "amazon",
+                "item_subtotal": 76.88,
+                "allocated_total": 76.88,
+                "source_grand_total": 76.88,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            },
+            {
+                "retailer": "amazon",
+                "order_id": "amazon-small-suspicious",
+                "transaction_date": "2026-01-14",
+                "merchant_normalized": "amazon",
+                "item_subtotal": 6.41,
+                "allocated_total": 6.41,
+                "source_grand_total": 6.41,
+                "needs_review": False,
+                "review_reason": "",
+                "household_category": "Groceries",
+            },
+        ]
+    )
+
+    rec = reconcile(
+        transactions,
+        items,
+        date_window_days=5,
+        match_amount_tolerance=Decimal("0.05"),
+        amazon_extended_date_window_days=10,
+        amazon_extended_date_min_amount=Decimal("10.00"),
+    )
+    detail = rec["reconciliation_detail"].set_index("order_id")
+
+    assert detail.loc["amazon-large", "matched_simplifi_transaction_id"] == "txn-amazon-large"
+    assert detail.loc["amazon-small-suspicious", "status"] == "unmatched_transaction"
+    assert detail.loc["amazon-small-suspicious", "matched_simplifi_transaction_id"] == ""
 
 
 def test_return_placeholder_reconciles_after_source_order_subtotal_override():

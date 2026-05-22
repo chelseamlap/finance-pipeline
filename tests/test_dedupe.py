@@ -169,7 +169,10 @@ def test_dedupe_retail_items_sets_single_placeholder_item_to_source_order_total(
                 "item_description_normalized": "vet rx",
                 "quantity": 2,
                 "unit_price": 1.00,
+                "item_subtotal_raw": 1.00,
+                "line_subtotal_derived": 2.00,
                 "item_subtotal": 1.00,
+                "item_subtotal_derivation_notes": "item_subtotal_derived_from_quantity_times_unit_price",
                 "allocated_total": 1.00,
                 "source_order_total": 21.78,
                 "source_grand_total": 21.78,
@@ -181,7 +184,9 @@ def test_dedupe_retail_items_sets_single_placeholder_item_to_source_order_total(
 
     assert out["item_id"].tolist() == ["vet-1"]
     assert out.loc[0, "item_subtotal"] == Decimal("21.78")
+    assert out.loc[0, "line_subtotal_derived"] == Decimal("21.78")
     assert out.loc[0, "allocated_total"] == Decimal("21.78")
+    assert out.loc[0, "item_subtotal_derivation_notes"] == "item_subtotal_derived_from_source_order_total"
     assert "item_subtotal set to source_order_total" in out.loc[0, "dedupe_notes"]
 
 

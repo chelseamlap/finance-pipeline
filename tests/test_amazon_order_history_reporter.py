@@ -50,3 +50,30 @@ def test_amazon_order_history_reporter_combines_order_and_item_exports(tmp_path)
     assert df["allocated_tax"].sum() == Decimal("2.05")
     assert df["allocated_total"].sum() == Decimal("43.31")
     assert not df["needs_review"].any()
+
+
+def test_amazon_order_history_reporter_emits_refund_adjustment_rows(tmp_path):
+    orders = tmp_path / "amazon_order_history_2026.csv"
+    orders.write_text(
+        "order id,order url,items,to,date,total,shipping,shipping_refund,gift,tax,refund,payments\n"
+        "113-1,https://example.com,Curtians; Rods; ,Chelsea,2026-02-11,59.06,0,,,2.80,45.14,Visa\n"
+    )
+    items = tmp_path / "amazon_order_history_items_2026.csv"
+    items.write_text(
+        "order id,order url,order date,quantity,description,item url,price,subscribe & save,ASIN,category\n"
+        "113-1,https://example.com,2026-02-11,1,Curtain Rings,https://example.com/item,12.99,0,B001,Home\n"
+        "113-1,https://example.com,2026-02-11,1,Curtains,https://example.com/item2,42.99,0,B002,Home\n"
+    )
+
+    df = amazon_order_history_reporter.load(tmp_path, "batch")
+    purchased = df[df["order_id"] == "113-1"]
+    adjustment = df[df["order_id"] == "113-1:refund"].iloc[0]
+
+    assert len(df) == 3
+    assert purchased["item_discount"].sum() == Decimal("0.00")
+    assert purchased["allocated_total"].sum() == Decimal("58.78")
+    assert adjustment["allocated_total"] == Decimal("-45.14")
+    assert adjustment["source_grand_total"] == Decimal("-45.14")
+    assert adjustment["source_category_raw"] == "refund-adjustment"
+    assert adjustment["needs_review"]
+    assert "amazon_refund_adjustment_unmatched" in adjustment["review_reason"]

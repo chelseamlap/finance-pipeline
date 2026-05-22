@@ -13,7 +13,7 @@ from finance_pipeline.identity import (
     stable_hash,
 )
 from finance_pipeline.loaders.generic import apply_aliases, read_tables, reject_rows, source_files, str_or_blank
-from finance_pipeline.loaders.retail_common import load_retail_items
+from finance_pipeline.loaders.retail_common import derive_line_subtotal, load_retail_items
 from finance_pipeline.models import CanonicalRetailItem, money
 from finance_pipeline.normalize import clean_string, normalize_merchant, normalize_text, parse_date
 from finance_pipeline.reconcile import allocate_order_amounts
@@ -97,7 +97,7 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
                 merchant = str_or_blank(data, "merchant_raw") or retailer
                 quantity = money(data.get("quantity", "1"))
                 unit_price = money(data.get("unit_price", "0"))
-                subtotal = money(data.get("item_subtotal", "")) if clean_string(data.get("item_subtotal")) else quantity * unit_price
+                raw_subtotal, subtotal, subtotal_note = derive_line_subtotal(data, quantity, unit_price)
                 discount = money(data.get("item_discount", "0"))
                 tax = money(data.get("allocated_tax", "0"))
                 shipping = money(data.get("allocated_shipping", "0"))
@@ -117,12 +117,15 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
                     "upc": str_or_blank(data, "upc"),
                     "quantity": quantity,
                     "unit_price": unit_price,
+                    "item_subtotal_raw": raw_subtotal,
+                    "line_subtotal_derived": subtotal,
                     "item_subtotal": subtotal,
                     "item_discount": discount,
                     "allocated_tax": tax,
                     "allocated_shipping": shipping,
                     "allocated_fee": fee,
                     "allocated_total": subtotal - discount + tax + shipping + fee,
+                    "item_subtotal_derivation_notes": subtotal_note,
                     "source_order_total": _optional_money(data, "source_order_total"),
                     "source_tax_total": _optional_money(data, "source_tax_total"),
                     "source_discount_total": _optional_money(data, "source_discount_total"),

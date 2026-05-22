@@ -217,12 +217,20 @@ The pipeline compares calculated order totals against source grand totals and ma
 
 - transaction date window, default `+/- 5` days
 - merchant/retailer match
-- amount tolerance, default `$0.03`
+- accounting mismatch tolerance, default `$0.03`
+- transaction match tolerance, default `$0.05`
+
+The matching tolerance is intentionally separate from the accounting tolerance. A transaction can match with a tiny posted-vs-retailer drift, such as `$0.05`, while the exact drift remains visible in `retailer_vs_simplifi_difference`. Amazon also has a conservative extended date fallback, default `10` days, for orders of at least `$10.00`; this catches normal Amazon posting delays without auto-matching suspicious small digital or placeholder charges.
+
+Orders whose item-derived total and retailer grand total are both zero are marked `no_bank_transaction_expected`. They are not matched to a Simplifi transaction, but they are excluded from unmatched-order review because no bank/card posting should exist.
+
+For monthly rollups, `store_reconciliation_summary.csv` compares each retailer's matched Simplifi total to the item-derived retail total. The practical accuracy target is `within_5_percent_of_store_simplifi=true`: the reconciled item total is within 5% of that store's matched Simplifi total. Unmatched retail orders remain categorized and keep `unmatched_transaction` review labels, but they are separated from `reconciled_item_total` so sync gaps do not make the reconciled store accuracy metric fail.
 
 Review these files first:
 
 ```text
 data/processed/YYYY-MM/reconciliation_summary.csv
+data/processed/YYYY-MM/store_reconciliation_summary.csv
 data/processed/YYYY-MM/reconciliation_detail.csv
 data/processed/YYYY-MM/unmatched_simplifi_transactions.csv
 data/processed/YYYY-MM/unmatched_retail_orders.csv
@@ -232,6 +240,10 @@ data/processed/YYYY-MM/items_needing_review.csv
 Reconciliation detail is intentionally layered because Simplifi is the source of truth for money that actually hit the bank or card. The main comparison columns are `simplifi_amount` for the signed Simplifi transaction amount, `simplifi_reconciled_total` for the comparable spend/refund total, `item_derived_total` for the sum of item rows after allocated components, and `retailer_source_grand_total` for the retailer/export order total. Pairwise differences are written as `item_vs_simplifi_difference`, `retailer_vs_simplifi_difference`, and `item_vs_retailer_difference`. Matching is sign-aware: retailer charges match Simplifi spending transactions, and retailer refunds/credits match Simplifi credits instead of matching by absolute value alone.
 
 Before categorization and reconciliation, same-order duplicate OrderPro item rows are reconciled against retailer `source_order_total` when available. For each duplicate item group, the pipeline keeps the number of repeated rows that makes the item subtotal layer closest to the retailer order subtotal, while preserving rows that differ by quantity, price, subtotal, or source totals. If an OrderPro order has only one unique item kind and the exported placeholder subtotal cannot explain the retailer order subtotal, that item subtotal is set to `source_order_total` with a dedupe note; this handles Costco return/placeholder lines such as `/1899652` and low-value `VET. RX` rows.
+
+For item rows, `item_subtotal_raw` preserves the exported line subtotal, `line_subtotal_derived` records the pipeline's best line subtotal, and `item_subtotal` is the active subtotal used for allocation and reconciliation. When an export appears to provide a per-unit subtotal for a multi-quantity item, for example quantity `2`, unit price `$6.99`, item total `$6.99`, the pipeline derives the active subtotal from `quantity * unit_price` and records `item_subtotal_derivation_notes`.
+
+Amazon Order History Reporter item-level exports treat order-level `refund` values as separate negative adjustment rows instead of discounts on the purchased items. The adjustment rows use order ids like `<order_id>:refund`, keep `source_category_raw=refund-adjustment`, and remain reviewable/matchable on their own. This keeps the original order charge from being undercounted while still preserving refund activity for categorization and reconciliation.
 
 When retailer source tax, shipping, fee, or discount exists only at the order level, the amount is allocated proportionally across positive item subtotals. The final row allocation absorbs penny rounding so the item-derived total reconciles to the retailer source order value within tolerance.
 
