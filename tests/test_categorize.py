@@ -2,6 +2,7 @@ from pathlib import Path
 
 from finance_pipeline.categorize import categorize_items
 from finance_pipeline.loaders import amazon_order_history_reporter
+from finance_pipeline.storage import MemoryStateStore
 
 
 def test_category_rules_are_deterministic_and_unknown_reviews():
@@ -48,3 +49,54 @@ def test_broad_keyword_rule_still_matches_general_milk():
 
     assert categorized.loc[0, "household_category"] == "Groceries"
     assert categorized.loc[0, "category_rule_id"] == "kw:grocery"
+
+
+def test_categorization_saves_historical_item_mapping_for_resolved_category():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    store = MemoryStateStore()
+
+    categorized, _ = categorize_items(df.iloc[[0]], mapping_store=store)
+
+    key = ("asin", f"amazon:{df.loc[0, 'asin']}")
+    assert categorized.loc[0, "household_category"] == "Groceries"
+    assert store.category_mappings[key]["category"] == "Groceries"
+    assert store.category_mappings[key]["source"] == "exact_identifier"
+    assert store.category_mappings[key]["reviewed"] is False
+    assert store.category_mappings[key]["original_item_description"] == df.loc[0, "item_description_raw"]
+    assert store.category_mappings[key]["normalized_item_description"] == df.loc[0, "item_description_normalized"]
+    assert store.category_mappings[key]["retailer"] == "amazon"
+    assert store.category_mappings[key]["source_adapter"] == "amazon_order_history_reporter"
+    assert store.category_mappings[key]["item_id"] == df.loc[0, "item_id"]
+    assert store.category_mappings[key]["file_source"] == str(Path("tests/fixtures/amazon_ohr.csv"))
+    assert store.category_mappings[key]["import_batch_id"] == "batch"
+    assert store.category_mappings[key]["created_from_rule_id"] == f"asin:{df.loc[0, 'asin']}"
+
+
+def test_historical_mapping_is_reused_before_rules_change_category():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    store = MemoryStateStore()
+    store.upsert_mapping("asin", f"amazon:{df.loc[0, 'asin']}", "Health_Personal_Care", source="historical_rule", reviewed=False)
+
+    categorized, _ = categorize_items(df.iloc[[0]], mapping_store=store)
+
+    assert categorized.loc[0, "household_category"] == "Health_Personal_Care"
+    assert categorized.loc[0, "category_rule_id"] == f"saved:asin:amazon:{df.loc[0, 'asin']}"
+
+
+def test_unknown_category_is_not_saved_as_historical_mapping():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    df.loc[0, ["asin", "sku", "upc", "item_description_raw", "item_description_normalized", "merchant_raw", "merchant_normalized"]] = [
+        "",
+        "",
+        "",
+        "Mystery Object",
+        "mystery object",
+        "",
+        "",
+    ]
+    store = MemoryStateStore()
+
+    categorized, _ = categorize_items(df.iloc[[0]], mapping_store=store)
+
+    assert categorized.loc[0, "household_category"] == "Unknown_Review"
+    assert store.category_mappings == {}

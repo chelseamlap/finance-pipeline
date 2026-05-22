@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .mappings import first_saved_mapping
+from .mappings import first_saved_mapping, save_historical_item_mapping
 from .normalize import load_yaml, normalize_text, spending_class_for_retail_category
 
 
@@ -29,6 +29,10 @@ def categorize_items(df: pd.DataFrame, mapping_store=None) -> tuple[pd.DataFrame
         if category == "Unknown_Review":
             out.at[idx, "needs_review"] = True
             out.at[idx, "review_reason"] = append_reason(row.get("review_reason", ""), "unknown category")
+        elif mapping_store is not None and not rule_id.startswith("saved:"):
+            mapping_row = row.to_dict()
+            mapping_row["category_rule_id"] = rule_id
+            save_historical_item_mapping(mapping_row, category, mapping_store, source=confidence)
         coverage[rule_id or "none"] = coverage.get(rule_id or "none", 0) + 1
 
     coverage_df = pd.DataFrame(

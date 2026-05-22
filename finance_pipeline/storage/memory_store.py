@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 
@@ -29,8 +30,9 @@ class MemoryStateStore:
         source: str,
         confidence: str = "manual",
         reviewed: bool = True,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
-        self.category_mappings[(mapping_type, mapping_key)] = {
+        record = {
             "mapping_type": mapping_type,
             "mapping_key": mapping_key,
             "category": category,
@@ -38,6 +40,9 @@ class MemoryStateStore:
             "confidence": confidence,
             "reviewed": reviewed,
         }
+        if metadata:
+            record.update(json.loads(json.dumps(metadata, default=_json_default)))
+        self.category_mappings[(mapping_type, mapping_key)] = record
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
         return self.category_mappings.get((mapping_type, mapping_key))

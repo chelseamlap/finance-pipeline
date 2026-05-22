@@ -70,6 +70,14 @@ def transaction_identity_parts(row: dict) -> list[object]:
 
 
 def mapping_keys_for_retail_item(row: dict) -> list[tuple[str, str]]:
+    keys = item_mapping_keys_for_retail_item(row)
+    merchant = normalize_text(row.get("merchant_raw") or row.get("merchant_normalized"))
+    if merchant:
+        keys.append(("merchant", merchant))
+    return keys
+
+
+def item_mapping_keys_for_retail_item(row: dict) -> list[tuple[str, str]]:
     retailer = normalize_text(row.get("retailer"))
     keys: list[tuple[str, str]] = []
     for key_type, field in [("asin", "asin"), ("upc", "upc"), ("sku", "sku")]:
@@ -79,9 +87,6 @@ def mapping_keys_for_retail_item(row: dict) -> list[tuple[str, str]]:
     desc = normalize_text(row.get("item_description_raw") or row.get("item_description_normalized"))
     if desc:
         keys.append(("description", f"{retailer}:{desc}" if retailer else desc))
-    merchant = normalize_text(row.get("merchant_raw") or row.get("merchant_normalized"))
-    if merchant:
-        keys.append(("merchant", merchant))
     return keys
 
 

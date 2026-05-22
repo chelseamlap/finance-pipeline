@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 
@@ -41,20 +42,21 @@ class FirestoreStateStore:
         source: str,
         confidence: str = "manual",
         reviewed: bool = True,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         doc_id = stable_hash([mapping_type, mapping_key], length=40)
-        self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).set(
-            {
-                "mapping_type": mapping_type,
-                "mapping_key": mapping_key,
-                "category": category,
-                "source": source,
-                "confidence": confidence,
-                "reviewed": reviewed,
-                "updated_at": _now(),
-            },
-            merge=True,
-        )
+        payload = {
+            "mapping_type": mapping_type,
+            "mapping_key": mapping_key,
+            "category": category,
+            "source": source,
+            "confidence": confidence,
+            "reviewed": reviewed,
+            "updated_at": _now(),
+        }
+        if metadata:
+            payload.update(metadata)
+        self.client.collection(f"{self.collection_prefix}_category_mappings").document(doc_id).set(payload, merge=True)
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
         doc_id = stable_hash([mapping_type, mapping_key], length=40)

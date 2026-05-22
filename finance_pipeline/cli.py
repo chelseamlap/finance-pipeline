@@ -14,6 +14,7 @@ from .logging_config import configure_logging
 from .dedupe import dedupe_retail_items
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
+from .source_dates import SourceDateRecord, collect_source_max_dates
 from .source_registry import load_source, reconciliation_config, registry
 from .storage import BigQueryAnalyticsStore, FirestoreStateStore
 
@@ -57,6 +58,7 @@ def run_month(
     bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
 ) -> None:
     import_batch_id = f"month-{month}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+    _echo_source_max_dates(collect_source_max_dates())
     state_store = FirestoreStateStore(firestore_project, firestore_prefix) if firestore_project else None
     analytics_store = (
         BigQueryAnalyticsStore(bigquery_project, bigquery_dataset, bigquery_location) if bigquery_project else None
@@ -87,6 +89,12 @@ def run_month(
         analytics_store.write_table("category_rule_coverage", coverage, import_batch_id)
         analytics_store.close()
     typer.echo(f"Wrote monthly outputs to data/processed/{month}")
+
+
+@app.command("source-max-dates")
+def source_max_dates() -> None:
+    """Print the latest source date found in each registered raw folder and file."""
+    _echo_source_max_dates(collect_source_max_dates())
 
 
 @app.command("save-mapping")
@@ -155,6 +163,18 @@ def _load_all_sources(import_batch_id: str) -> tuple[pd.DataFrame, pd.DataFrame]
     items = pd.concat(item_frames, ignore_index=True) if item_frames else pd.DataFrame(columns=RETAIL_ITEM_COLUMNS)
     items = dedupe_retail_items(items)
     return transactions, items
+
+
+def _echo_source_max_dates(records: list[SourceDateRecord]) -> None:
+    typer.echo("Source max dates:")
+    for record in records:
+        scope = "folder" if record.file is None else "file"
+        path = record.folder if record.file is None else record.file
+        max_date = record.max_date.isoformat() if record.max_date is not None else "-"
+        typer.echo(
+            f"{record.source}\t{scope}\t{path}\t{max_date}\t"
+            f"{record.dated_rows} dated row(s)\t{record.status}"
+        )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import pandas as pd
 
@@ -18,6 +18,7 @@ class StateStore(Protocol):
         source: str,
         confidence: str = "manual",
         reviewed: bool = True,
+        metadata: dict[str, Any] | None = None,
     ) -> None: ...
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None: ...

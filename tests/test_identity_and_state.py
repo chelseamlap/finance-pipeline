@@ -3,6 +3,7 @@ import shutil
 
 from finance_pipeline.categorize import categorize_items
 from finance_pipeline.loaders import orderpro
+from finance_pipeline.storage.firestore_store import FirestoreStateStore
 from finance_pipeline.storage import MemoryStateStore
 
 
@@ -59,3 +60,54 @@ def test_state_store_upsert_preserves_record_identity(tmp_path):
 
     assert len(store.retail_items) == len(df)
     assert {row["last_seen_run_id"] for row in store.retail_items.values()} == {"run-2"}
+
+
+def test_firestore_mapping_upsert_includes_audit_metadata():
+    store = object.__new__(FirestoreStateStore)
+    store.client = FakeFirestoreClient()
+    store.collection_prefix = "test"
+
+    store.upsert_mapping(
+        "description",
+        "target:whole milk",
+        "Groceries",
+        source="keyword",
+        confidence="keyword",
+        reviewed=False,
+        metadata={
+            "original_item_description": "Whole Milk",
+            "normalized_item_description": "whole milk",
+            "item_id": "item-1",
+        },
+    )
+
+    payload = store.client.collections["test_category_mappings"].last_payload
+    assert payload["mapping_type"] == "description"
+    assert payload["mapping_key"] == "target:whole milk"
+    assert payload["original_item_description"] == "Whole Milk"
+    assert payload["normalized_item_description"] == "whole milk"
+    assert payload["item_id"] == "item-1"
+    assert "updated_at" in payload
+
+
+class FakeFirestoreClient:
+    def __init__(self):
+        self.collections = {}
+
+    def collection(self, name):
+        collection = FakeFirestoreCollection()
+        self.collections[name] = collection
+        return collection
+
+
+class FakeFirestoreCollection:
+    def __init__(self):
+        self.last_payload = None
+
+    def document(self, doc_id):
+        self.doc_id = doc_id
+        return self
+
+    def set(self, payload, merge=False):
+        self.last_payload = payload
+        self.merge = merge
