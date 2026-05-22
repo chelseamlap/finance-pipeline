@@ -56,7 +56,7 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-Expected test result is currently `25 passed`.
+Expected test result is currently `45 passed`.
 
 ## Google Cloud Setup
 
