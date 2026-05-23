@@ -157,6 +157,25 @@ def test_categorization_does_not_rewrite_existing_mapping_candidates():
     assert store.candidate_writes == 1
 
 
+def test_categorization_can_skip_mapping_candidate_queue():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    df.loc[0, ["asin", "sku", "upc", "item_description_raw", "item_description_normalized", "merchant_raw", "merchant_normalized"]] = [
+        "",
+        "",
+        "",
+        "Mystery Object",
+        "mystery object",
+        "",
+        "",
+    ]
+    store = CountingCandidateStore()
+
+    categorize_items(df.iloc[[0]], mapping_store=store, queue_mapping_candidates=False)
+
+    assert store.candidate_writes == 0
+    assert store.mapping_candidates == {}
+
+
 class CountingMappingStore(MemoryStateStore):
     def __init__(self):
         super().__init__()

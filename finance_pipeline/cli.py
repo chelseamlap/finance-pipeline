@@ -17,7 +17,7 @@ from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
 from .source_dates import SourceDateRecord, collect_source_max_dates
 from .source_registry import load_source, reconciliation_config, registry
-from .storage import BigQueryAnalyticsStore, FirestoreStateStore
+from .storage import BigQueryAnalyticsStore, FirestoreStateStore, MemoryStateStore
 
 app = typer.Typer(help="Deterministic personal finance retail parsing pipeline.")
 
@@ -54,8 +54,10 @@ def run_month(
     month: str = typer.Option(..., "--month"),
     check_source_dates: bool = typer.Option(True, "--check-source-dates/--skip-source-date-check", help="Print raw source max dates before loading sources."),
     persist_record_state: bool = typer.Option(True, "--persist-record-state/--skip-record-state", help="Persist transaction and retail item state when Firestore is enabled."),
+    queue_mapping_candidates: bool = typer.Option(True, "--queue-mapping-candidates/--skip-mapping-queue", help="Queue unknown and conflicting mapping candidates when Firestore is enabled."),
     firestore_project: Optional[str] = typer.Option(None, "--firestore-project", help="Google Cloud project for Firestore operational state."),
     firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    mapping_csv: Optional[Path] = typer.Option(None, "--mapping-csv", exists=True, help="Use exported category mappings from CSV instead of Firestore for categorization."),
     bigquery_project: Optional[str] = typer.Option(None, "--bigquery-project", help="Google Cloud project for BigQuery analytics tables."),
     bigquery_dataset: str = typer.Option("finance_pipeline", "--bigquery-dataset", help="BigQuery dataset for canonical tables."),
     bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
@@ -64,11 +66,16 @@ def run_month(
     if check_source_dates:
         _echo_source_max_dates(collect_source_max_dates())
     state_store = FirestoreStateStore(firestore_project, firestore_prefix) if firestore_project else None
+    mapping_store = _load_mapping_csv_store(mapping_csv) if mapping_csv else state_store
     analytics_store = (
         BigQueryAnalyticsStore(bigquery_project, bigquery_dataset, bigquery_location) if bigquery_project else None
     )
     transactions, items = _load_all_sources(import_batch_id)
-    categorized_items, coverage = categorize_items(items, mapping_store=state_store)
+    categorized_items, coverage = categorize_items(
+        items,
+        mapping_store=mapping_store,
+        queue_mapping_candidates=queue_mapping_candidates,
+    )
     cfg = reconciliation_config()
     rec = reconcile(
         transactions,
@@ -236,6 +243,31 @@ def _echo_source_max_dates(records: list[SourceDateRecord]) -> None:
             f"{record.source}\t{scope}\t{path}\t{max_date}\t"
             f"{record.dated_rows} dated row(s)\t{record.status}"
         )
+
+
+def _load_mapping_csv_store(path: Path | None):
+    if path is None:
+        return None
+    store = MemoryStateStore()
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    required = {"mapping_type", "mapping_key", "category"}
+    missing = required - set(df.columns)
+    if missing:
+        raise typer.BadParameter(f"Mapping CSV missing required column(s): {sorted(missing)}")
+    base_fields = {"mapping_type", "mapping_key", "category", "source", "confidence", "reviewed"}
+    for row in df.to_dict("records"):
+        metadata = {key: value for key, value in row.items() if key not in base_fields and str(value).strip()}
+        reviewed = str(row.get("reviewed", "False")).strip().lower() == "true"
+        store.upsert_mapping(
+            row["mapping_type"],
+            row["mapping_key"],
+            row["category"],
+            source=row.get("source") or "mapping_csv",
+            confidence=row.get("confidence") or "mapping_csv",
+            reviewed=reviewed,
+            metadata=metadata,
+        )
+    return store
 
 
 if __name__ == "__main__":

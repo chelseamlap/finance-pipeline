@@ -12,11 +12,11 @@ def taxonomy() -> set[str]:
     return set(load_yaml("category_taxonomy.yaml").get("categories", []))
 
 
-def categorize_items(df: pd.DataFrame, mapping_store=None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def categorize_items(df: pd.DataFrame, mapping_store=None, queue_mapping_candidates: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     if df.empty:
         return df, pd.DataFrame()
     if mapping_store is not None and not isinstance(mapping_store, CachedMappingStore):
-        mapping_store = CachedMappingStore(mapping_store)
+        mapping_store = CachedMappingStore(mapping_store, queue_candidates=queue_mapping_candidates)
     rules = load_yaml("merchant_rules.yaml")
     allowed = taxonomy()
     out = df.copy()

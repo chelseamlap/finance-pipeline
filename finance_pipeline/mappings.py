@@ -7,18 +7,20 @@ from .normalize import clean_string, normalize_text, spending_class_for_retail_c
 
 
 class CachedMappingStore:
-    def __init__(self, mapping_store) -> None:
+    def __init__(self, mapping_store, queue_candidates: bool = True) -> None:
         self.mapping_store = mapping_store
+        self.queue_candidates = queue_candidates
         self.mapping_cache: dict[tuple[str, str], dict | None] = {}
         self.candidate_ids: set[str] = set()
         for mapping in getattr(mapping_store, "list_mappings", lambda: [])():
             key = (str(mapping.get("mapping_type", "")), str(mapping.get("mapping_key", "")))
             if all(key):
                 self.mapping_cache[key] = mapping
-        for candidate in getattr(mapping_store, "list_mapping_candidates", lambda: [])():
-            candidate_id = str(candidate.get("candidate_id", ""))
-            if candidate_id:
-                self.candidate_ids.add(candidate_id)
+        if queue_candidates:
+            for candidate in getattr(mapping_store, "list_mapping_candidates", lambda: [])():
+                candidate_id = str(candidate.get("candidate_id", ""))
+                if candidate_id:
+                    self.candidate_ids.add(candidate_id)
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
         key = (mapping_type, mapping_key)
@@ -42,6 +44,8 @@ class CachedMappingStore:
         self.mapping_cache[(mapping_type, mapping_key)] = record
 
     def upsert_mapping_candidate(self, candidate: dict) -> None:
+        if not self.queue_candidates:
+            return
         candidate_id = str(candidate["candidate_id"])
         if candidate_id in self.candidate_ids:
             return

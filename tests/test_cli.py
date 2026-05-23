@@ -102,7 +102,7 @@ def test_run_month_can_skip_source_date_check(monkeypatch):
 
     monkeypatch.setattr(cli, "collect_source_max_dates", fail_source_dates)
     monkeypatch.setattr(cli, "_load_all_sources", lambda import_batch_id: (pd.DataFrame(), pd.DataFrame()))
-    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None: (items, pd.DataFrame()))
+    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None, queue_mapping_candidates=True: (items, pd.DataFrame()))
     monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
     monkeypatch.setattr(cli, "write_month_outputs", lambda *args, **kwargs: None)
     runner = CliRunner()
@@ -120,7 +120,7 @@ def test_run_month_can_skip_record_state_persistence(monkeypatch):
     store = CountingStateStore()
     monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: store)
     monkeypatch.setattr(cli, "_load_all_sources", lambda import_batch_id: (pd.DataFrame(), pd.DataFrame()))
-    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None: (items, pd.DataFrame()))
+    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None, queue_mapping_candidates=True: (items, pd.DataFrame()))
     monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
     monkeypatch.setattr(cli, "write_month_outputs", lambda *args, **kwargs: None)
     runner = CliRunner()
@@ -142,6 +142,79 @@ def test_run_month_can_skip_record_state_persistence(monkeypatch):
     assert store.transaction_upserts == 0
     assert store.retail_item_upserts == 0
     assert store.closed is True
+
+
+def test_run_month_can_skip_mapping_candidate_queue(monkeypatch):
+    import pandas as pd
+    import finance_pipeline.cli as cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: CountingStateStore())
+    monkeypatch.setattr(cli, "_load_all_sources", lambda import_batch_id: (pd.DataFrame(), pd.DataFrame({"item_id": ["i1"]})))
+
+    def fake_categorize(items, mapping_store=None, queue_mapping_candidates=True):
+        seen["queue_mapping_candidates"] = queue_mapping_candidates
+        return items, pd.DataFrame()
+
+    monkeypatch.setattr(cli, "categorize_items", fake_categorize)
+    monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
+    monkeypatch.setattr(cli, "write_month_outputs", lambda *args, **kwargs: None)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run-month",
+            "--month",
+            "2026-05",
+            "--firestore-project",
+            "test-project",
+            "--skip-source-date-check",
+            "--skip-record-state",
+            "--skip-mapping-queue",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen["queue_mapping_candidates"] is False
+
+
+def test_run_month_can_use_mapping_csv(monkeypatch, tmp_path):
+    import pandas as pd
+    import finance_pipeline.cli as cli
+
+    mapping_csv = tmp_path / "category_mappings.csv"
+    mapping_csv.write_text(
+        "mapping_type,mapping_key,category,source,confidence,reviewed,original_item_description\n"
+        "description,target:whole milk,Groceries,candidate_review,manual_review,True,Whole Milk\n"
+    )
+    seen = {}
+    monkeypatch.setattr(cli, "_load_all_sources", lambda import_batch_id: (pd.DataFrame(), pd.DataFrame({"item_id": ["i1"]})))
+
+    def fake_categorize(items, mapping_store=None, queue_mapping_candidates=True):
+        seen["mapping"] = mapping_store.get_mapping("description", "target:whole milk")
+        return items, pd.DataFrame()
+
+    monkeypatch.setattr(cli, "categorize_items", fake_categorize)
+    monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
+    monkeypatch.setattr(cli, "write_month_outputs", lambda *args, **kwargs: None)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run-month",
+            "--month",
+            "2026-05",
+            "--mapping-csv",
+            str(mapping_csv),
+            "--skip-source-date-check",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen["mapping"]["category"] == "Groceries"
+    assert seen["mapping"]["original_item_description"] == "Whole Milk"
 
 
 def test_cli_accept_mapping_candidate_promotes_candidate(monkeypatch):
