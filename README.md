@@ -149,8 +149,8 @@ The loader reads `.gsheet` shortcuts through the Google Sheets API. The local `.
 
 1. Refresh or export source files into the matching `data/raw/...` folder.
 2. Run individual ingests when you want to inspect one source.
-3. Run the reporting month.
-4. Review reconciliation and category review files.
+3. Run the reporting month or month range.
+4. Review the consolidated review files first, then drill into month folders only when needed.
 5. Add saved mappings or YAML rules for recurring items.
 6. Commit only code/config/doc/test changes, never raw or processed household data.
 
@@ -174,6 +174,37 @@ python -m finance_pipeline.cli export --month 2026-05
 ```
 
 `run-month` means "produce outputs for this reporting month." It does not mean the raw imports are only that month. The loaders may read full-year files, which is expected for OrderPro. The export step filters monthly output files, reconciliation detail, unmatched files, and review queues back to the requested month.
+
+Run a month range in one shot:
+
+```bash
+python -m finance_pipeline.cli run-period \
+  --start-month 2025-01 \
+  --end-month 2026-05 \
+  --firestore-project spending-pipeline
+```
+
+`run-period` loads all raw sources once, categorizes once, reconciles once, and then writes each requested `data/processed/YYYY-MM/` folder from the same in-memory result. Use it for normal monthly reruns and historical backfills whenever the raw exports cover more than one month. It also writes consolidated review CSVs under `data/processed/runs/<run_id>/review/`:
+
+- `run_summary.csv` for month-by-month health checks.
+- `category_review.csv` for grouped category decisions by mapping key, with sample descriptions and impact.
+- `reconciliation_review.csv` for order-level mismatches sorted by review priority.
+
+To apply category review decisions, add an `accepted_category` column to `category_review.csv` and fill it only for rows that should become saved mappings. Leave rows blank when they need more investigation or should be handled by a broader YAML rule. Then import the reviewed rows:
+
+```bash
+python -m finance_pipeline.cli import-reviewed-mappings \
+  --review-csv data/processed/runs/<run_id>/review/category_review.csv \
+  --firestore-project spending-pipeline \
+  --dry-run
+
+python -m finance_pipeline.cli import-reviewed-mappings \
+  --review-csv data/processed/runs/<run_id>/review/category_review.csv \
+  --firestore-project spending-pipeline \
+  --reviewed-by chelsea
+```
+
+The import validates categories against `config/category_taxonomy.yaml`, skips blank decisions, rejects conflicting duplicate decisions, and stores review context such as reason, sample descriptions, counts, dates, and totals with the saved mapping for auditability.
 
 Run a month while persisting state to Firestore and analytics to BigQuery:
 
@@ -253,24 +284,23 @@ python -m finance_pipeline.cli run-month \
   --skip-record-state
 ```
 
-For historical backfills across many months, export mappings once and use that CSV locally. This avoids repeated Firestore reads and keeps the backfill limited mostly by Google Sheets API reads:
+For historical backfills across many months, export mappings once and use that CSV locally. This avoids repeated Firestore reads and keeps the run limited to one Google Sheets read pass:
 
 ```bash
 python -m finance_pipeline.cli export-mappings \
   --firestore-project spending-pipeline \
   --output-dir data/processed/mapping_review
 
-for month in 2025-01 2025-02 2025-03; do
-  python -m finance_pipeline.cli run-month \
-    --month "$month" \
-    --mapping-csv data/processed/mapping_review/category_mappings.csv \
-    --skip-source-date-check \
-    --skip-mapping-queue \
-    --skip-record-state
-done
+python -m finance_pipeline.cli run-period \
+  --start-month 2025-01 \
+  --end-month 2026-05 \
+  --mapping-csv data/processed/mapping_review/category_mappings.csv \
+  --skip-source-date-check \
+  --skip-mapping-queue \
+  --skip-record-state
 ```
 
-If Google Sheets returns a read quota error during a backfill, wait about a minute and resume from the failed month.
+If Google Sheets returns a read quota error during a backfill, wait about a minute and rerun `run-period`. The command reads sources once per invocation rather than once per month.
 
 ## Reconciliation
 

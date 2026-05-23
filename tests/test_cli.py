@@ -90,6 +90,115 @@ def test_cli_export_mappings_writes_mapping_review_files(tmp_path, monkeypatch):
     assert "unknown_category" in (tmp_path / "mapping_candidates.csv").read_text()
 
 
+def test_cli_import_reviewed_mappings_upserts_accepted_categories(tmp_path, monkeypatch):
+    import finance_pipeline.cli as cli
+
+    review_csv = tmp_path / "category_review.csv"
+    review_csv.write_text(
+        "mapping_type,mapping_key,reason,accepted_category,item_count,sample_original_descriptions\n"
+        "description,target:mystery bar,unknown_category,Groceries,2,Mystery Bar\n"
+        "description,target:skip me,unknown_category,,1,Skip Me\n"
+    )
+    store = FakeMappingStore()
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: store)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "import-reviewed-mappings",
+            "--review-csv",
+            str(review_csv),
+            "--firestore-project",
+            "test-project",
+            "--reviewed-by",
+            "chelsea",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    mapping = store.get_mapping("description", "target:mystery bar")
+    assert mapping["category"] == "Groceries"
+    assert mapping["source"] == "review_csv"
+    assert mapping["confidence"] == "manual_review"
+    assert mapping["reviewed"] is True
+    assert mapping["review_csv_reason"] == "unknown_category"
+    assert mapping["review_csv_sample_original_descriptions"] == "Mystery Bar"
+    assert store.get_mapping("description", "target:skip me") is None
+
+
+def test_cli_import_reviewed_mappings_dry_run_does_not_write(tmp_path, monkeypatch):
+    import finance_pipeline.cli as cli
+
+    review_csv = tmp_path / "category_review.csv"
+    review_csv.write_text("mapping_type,mapping_key,accepted_category\ndescription,target:mystery bar,Groceries\n")
+    store = FakeMappingStore()
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: store)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "import-reviewed-mappings",
+            "--review-csv",
+            str(review_csv),
+            "--firestore-project",
+            "test-project",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Validated 1 reviewed mapping" in result.output
+    assert store.get_mapping("description", "target:mystery bar") is None
+
+
+def test_cli_import_reviewed_mappings_rejects_invalid_category(tmp_path):
+    review_csv = tmp_path / "category_review.csv"
+    review_csv.write_text("mapping_type,mapping_key,accepted_category\ndescription,target:mystery bar,Nope\n")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "import-reviewed-mappings",
+            "--review-csv",
+            str(review_csv),
+            "--firestore-project",
+            "test-project",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "category is not in taxonomy" in result.output
+
+
+def test_cli_import_reviewed_mappings_rejects_conflicting_duplicate(tmp_path):
+    review_csv = tmp_path / "category_review.csv"
+    review_csv.write_text(
+        "mapping_type,mapping_key,accepted_category\n"
+        "description,target:mystery bar,Groceries\n"
+        "description,target:mystery bar,Household\n"
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "import-reviewed-mappings",
+            "--review-csv",
+            str(review_csv),
+            "--firestore-project",
+            "test-project",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "conflicting categories" in result.output
+
+
 def test_run_month_can_skip_source_date_check(monkeypatch):
     import pandas as pd
     import finance_pipeline.cli as cli
@@ -215,6 +324,49 @@ def test_run_month_can_use_mapping_csv(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert seen["mapping"]["category"] == "Groceries"
     assert seen["mapping"]["original_item_description"] == "Whole Milk"
+
+
+def test_run_period_loads_sources_once_and_writes_each_month(monkeypatch, tmp_path):
+    import pandas as pd
+    import finance_pipeline.cli as cli
+
+    calls = {"load": 0, "months": [], "review_dir": None}
+
+    def fake_load(import_batch_id):
+        calls["load"] += 1
+        return pd.DataFrame(), pd.DataFrame({"item_id": ["i1"]})
+
+    def fake_write_month(month, out_dir, transactions, items, rec, coverage):
+        calls["months"].append(month)
+
+    def fake_write_review(out_dir, months, transactions, items, rec):
+        calls["review_dir"] = out_dir
+
+    monkeypatch.setattr(cli, "_load_all_sources", fake_load)
+    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None, queue_mapping_candidates=True: (items, pd.DataFrame()))
+    monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
+    monkeypatch.setattr(cli, "write_month_outputs", fake_write_month)
+    monkeypatch.setattr(cli, "write_review_outputs", fake_write_review)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run-period",
+            "--start-month",
+            "2026-03",
+            "--end-month",
+            "2026-05",
+            "--skip-source-date-check",
+            "--review-output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["load"] == 1
+    assert calls["months"] == ["2026-03", "2026-04", "2026-05"]
+    assert calls["review_dir"] == tmp_path
 
 
 def test_cli_accept_mapping_candidate_promotes_candidate(monkeypatch):

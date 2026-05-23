@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from finance_pipeline.export import write_month_outputs
+from finance_pipeline.export import category_review, reconciliation_review, run_summary, write_month_outputs
 
 
 def test_write_month_outputs_filters_reconciliation_artifacts(tmp_path):
@@ -70,3 +70,109 @@ def test_write_month_outputs_filters_reconciliation_artifacts(tmp_path):
         "unmatched_orders": 1,
         "items_needing_review": 1,
     }
+
+
+def test_category_review_aggregates_repeated_items():
+    items = pd.DataFrame(
+        [
+            {
+                "item_id": "i1",
+                "retailer": "target",
+                "order_id": "o1",
+                "transaction_date": "2026-05-01",
+                "item_description_raw": "Mystery Bar",
+                "item_description_normalized": "mystery bar",
+                "allocated_total": 10,
+                "household_category": "Unknown_Review",
+                "needs_review": True,
+                "review_reason": "unknown category",
+                "source_adapter": "orderpro",
+            },
+            {
+                "item_id": "i2",
+                "retailer": "target",
+                "order_id": "o2",
+                "transaction_date": "2026-05-03",
+                "item_description_raw": "Mystery Bar",
+                "item_description_normalized": "mystery bar",
+                "allocated_total": 12,
+                "household_category": "Unknown_Review",
+                "needs_review": True,
+                "review_reason": "unknown category",
+                "source_adapter": "orderpro",
+            },
+        ]
+    )
+
+    review = category_review(items)
+
+    assert len(review) == 1
+    row = review.iloc[0].to_dict()
+    assert row["mapping_type"] == "description"
+    assert row["mapping_key"] == "target:mystery bar"
+    assert row["item_count"] == 2
+    assert row["order_count"] == 2
+    assert row["total_allocated"] == 22
+
+
+def test_run_summary_counts_month_health_metrics():
+    transactions = pd.DataFrame(
+        [
+            {"transaction_id": "tx1", "posted_date": "2026-05-01"},
+            {"transaction_id": "tx2", "posted_date": "2026-04-01"},
+        ]
+    )
+    items = pd.DataFrame(
+        [
+            {"item_id": "i1", "order_id": "o1", "transaction_date": "2026-05-01", "household_category": "Unknown_Review"},
+            {"item_id": "i2", "order_id": "o2", "transaction_date": "2026-04-01", "household_category": "Groceries"},
+        ]
+    )
+    detail = pd.DataFrame(
+        [
+            {"order_id": "o1", "transaction_date": "2026-05-01", "status": "total_mismatch; unmatched_transaction"},
+            {"order_id": "o2", "transaction_date": "2026-04-01", "status": "ok"},
+        ]
+    )
+    reconciliation = {
+        "items": items,
+        "reconciliation_detail": detail,
+        "unmatched_simplifi_transactions": transactions.iloc[[0]],
+        "unmatched_retail_orders": detail.iloc[[0]],
+        "items_needing_review": items.iloc[[0]],
+    }
+
+    summary = run_summary(["2026-04", "2026-05"], transactions, reconciliation)
+
+    may = summary[summary["month"] == "2026-05"].iloc[0].to_dict()
+    assert may["transactions"] == 1
+    assert may["retail_items"] == 1
+    assert may["unknown_category_items"] == 1
+    assert may["total_mismatch_orders"] == 1
+    assert may["unmatched_transactions"] == 1
+
+
+def test_reconciliation_review_prioritizes_actionable_gaps():
+    detail = pd.DataFrame(
+        [
+            {
+                "retailer": "target",
+                "order_id": "o1",
+                "transaction_date": "2026-05-01",
+                "status": "ok",
+            },
+            {
+                "retailer": "target",
+                "order_id": "o2",
+                "transaction_date": "2026-05-02",
+                "status": "total_mismatch; unmatched_transaction",
+                "item_vs_retailer_difference": 5,
+                "item_vs_simplifi_difference": 5,
+            },
+        ]
+    )
+
+    review = reconciliation_review(detail)
+
+    assert review["order_id"].tolist() == ["o2"]
+    assert review.iloc[0]["review_priority"] == 1

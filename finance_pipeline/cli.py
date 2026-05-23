@@ -9,7 +9,7 @@ import pandas as pd
 import typer
 
 from .categorize import categorize_items, taxonomy
-from .export import write_month_outputs
+from .export import write_month_outputs, write_review_outputs
 from .logging_config import configure_logging
 from .dedupe import dedupe_retail_items
 from .mappings import accept_mapping_candidate, export_mapping_tables, reject_mapping_candidate
@@ -62,45 +62,56 @@ def run_month(
     bigquery_dataset: str = typer.Option("finance_pipeline", "--bigquery-dataset", help="BigQuery dataset for canonical tables."),
     bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
 ) -> None:
-    import_batch_id = f"month-{month}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
-    if check_source_dates:
-        _echo_source_max_dates(collect_source_max_dates())
-    state_store = FirestoreStateStore(firestore_project, firestore_prefix) if firestore_project else None
-    mapping_store = _load_mapping_csv_store(mapping_csv) if mapping_csv else state_store
-    analytics_store = (
-        BigQueryAnalyticsStore(bigquery_project, bigquery_dataset, bigquery_location) if bigquery_project else None
-    )
-    transactions, items = _load_all_sources(import_batch_id)
-    categorized_items, coverage = categorize_items(
-        items,
-        mapping_store=mapping_store,
+    _run_period(
+        months=[month],
+        import_batch_prefix="month",
+        check_source_dates=check_source_dates,
+        persist_record_state=persist_record_state,
         queue_mapping_candidates=queue_mapping_candidates,
+        firestore_project=firestore_project,
+        firestore_prefix=firestore_prefix,
+        mapping_csv=mapping_csv,
+        bigquery_project=bigquery_project,
+        bigquery_dataset=bigquery_dataset,
+        bigquery_location=bigquery_location,
+        write_review=False,
     )
-    cfg = reconciliation_config()
-    rec = reconcile(
-        transactions,
-        categorized_items,
-        date_window_days=int(cfg.get("date_window_days", 5)),
-        amount_tolerance=Decimal(str(cfg.get("amount_tolerance", 0.03))),
-        match_amount_tolerance=Decimal(str(cfg.get("match_amount_tolerance", cfg.get("amount_tolerance", 0.03)))),
-        amazon_extended_date_window_days=cfg.get("amazon_extended_date_window_days"),
-        amazon_extended_date_min_amount=Decimal(str(cfg.get("amazon_extended_date_min_amount", 10.00))),
-    )
-    write_month_outputs(month, Path("data/processed") / month, transactions, categorized_items, rec, coverage)
-    if state_store is not None and persist_record_state:
-        state_store.upsert_transactions(transactions, import_batch_id)
-        state_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
-    if state_store is not None:
-        state_store.close()
-    if analytics_store is not None:
-        analytics_store.upsert_transactions(transactions, import_batch_id)
-        analytics_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
-        for name, df in rec.items():
-            if name != "items":
-                analytics_store.write_table(name, df, import_batch_id)
-        analytics_store.write_table("category_rule_coverage", coverage, import_batch_id)
-        analytics_store.close()
     typer.echo(f"Wrote monthly outputs to data/processed/{month}")
+
+
+@app.command("run-period")
+def run_period(
+    start_month: str = typer.Option(..., "--start-month", help="First reporting month, YYYY-MM."),
+    end_month: str = typer.Option(..., "--end-month", help="Last reporting month, YYYY-MM."),
+    check_source_dates: bool = typer.Option(True, "--check-source-dates/--skip-source-date-check", help="Print raw source max dates before loading sources."),
+    persist_record_state: bool = typer.Option(True, "--persist-record-state/--skip-record-state", help="Persist transaction and retail item state once when Firestore is enabled."),
+    queue_mapping_candidates: bool = typer.Option(True, "--queue-mapping-candidates/--skip-mapping-queue", help="Queue unknown and conflicting mapping candidates when Firestore is enabled."),
+    firestore_project: Optional[str] = typer.Option(None, "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    mapping_csv: Optional[Path] = typer.Option(None, "--mapping-csv", exists=True, help="Use exported category mappings from CSV instead of Firestore for categorization."),
+    review_output_dir: Optional[Path] = typer.Option(None, "--review-output-dir", help="Directory for consolidated review CSVs. Defaults to data/processed/runs/<run_id>/review."),
+    bigquery_project: Optional[str] = typer.Option(None, "--bigquery-project", help="Google Cloud project for BigQuery analytics tables."),
+    bigquery_dataset: str = typer.Option("finance_pipeline", "--bigquery-dataset", help="BigQuery dataset for canonical tables."),
+    bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
+) -> None:
+    months = _month_range(start_month, end_month)
+    review_dir = _run_period(
+        months=months,
+        import_batch_prefix="period",
+        check_source_dates=check_source_dates,
+        persist_record_state=persist_record_state,
+        queue_mapping_candidates=queue_mapping_candidates,
+        firestore_project=firestore_project,
+        firestore_prefix=firestore_prefix,
+        mapping_csv=mapping_csv,
+        bigquery_project=bigquery_project,
+        bigquery_dataset=bigquery_dataset,
+        bigquery_location=bigquery_location,
+        write_review=True,
+        review_output_dir=review_output_dir,
+    )
+    typer.echo(f"Wrote monthly outputs for {months[0]} through {months[-1]} to data/processed")
+    typer.echo(f"Wrote consolidated review outputs to {review_dir}")
 
 
 @app.command("source-max-dates")
@@ -139,6 +150,37 @@ def export_mappings(
     candidates.to_csv(candidates_path, index=False)
     typer.echo(f"Wrote {len(mappings)} mapping(s) to {mappings_path}")
     typer.echo(f"Wrote {len(candidates)} mapping candidate(s) to {candidates_path}")
+
+
+@app.command("import-reviewed-mappings")
+def import_reviewed_mappings(
+    review_csv: Path = typer.Option(..., "--review-csv", exists=True, help="Reviewed category_review.csv with accepted_category values."),
+    firestore_project: str = typer.Option(..., "--firestore-project", help="Google Cloud project for Firestore operational state."),
+    firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
+    reviewed_by: str = typer.Option("manual", "--reviewed-by"),
+    category_column: str = typer.Option("accepted_category", "--category-column", help="Column containing reviewed categories to import."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate and report importable mappings without writing Firestore."),
+) -> None:
+    df = pd.read_csv(review_csv, dtype=str, keep_default_na=False)
+    rows = _reviewed_mapping_rows(df, category_column)
+    if dry_run:
+        typer.echo(f"Validated {len(rows)} reviewed mapping(s) from {review_csv}")
+        return
+    store = FirestoreStateStore(firestore_project, firestore_prefix)
+    try:
+        for row in rows:
+            store.upsert_mapping(
+                row["mapping_type"],
+                row["mapping_key"],
+                row["category"],
+                source="review_csv",
+                confidence="manual_review",
+                reviewed=True,
+                metadata=row["metadata"],
+            )
+    finally:
+        store.close()
+    typer.echo(f"Imported {len(rows)} reviewed mapping(s) from {review_csv}")
 
 
 @app.command("accept-mapping-candidate")
@@ -233,6 +275,83 @@ def _load_all_sources(import_batch_id: str) -> tuple[pd.DataFrame, pd.DataFrame]
     return transactions, items
 
 
+def _run_period(
+    months: list[str],
+    import_batch_prefix: str,
+    check_source_dates: bool,
+    persist_record_state: bool,
+    queue_mapping_candidates: bool,
+    firestore_project: str | None,
+    firestore_prefix: str,
+    mapping_csv: Path | None,
+    bigquery_project: str | None,
+    bigquery_dataset: str,
+    bigquery_location: str | None,
+    write_review: bool,
+    review_output_dir: Path | None = None,
+) -> Path | None:
+    if not months:
+        raise typer.BadParameter("At least one month is required.")
+    import_batch_id = f"{import_batch_prefix}-{months[0]}-to-{months[-1]}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+    if check_source_dates:
+        _echo_source_max_dates(collect_source_max_dates())
+    state_store = FirestoreStateStore(firestore_project, firestore_prefix) if firestore_project else None
+    mapping_store = _load_mapping_csv_store(mapping_csv) if mapping_csv else state_store
+    analytics_store = (
+        BigQueryAnalyticsStore(bigquery_project, bigquery_dataset, bigquery_location) if bigquery_project else None
+    )
+    try:
+        transactions, items = _load_all_sources(import_batch_id)
+        categorized_items, coverage = categorize_items(
+            items,
+            mapping_store=mapping_store,
+            queue_mapping_candidates=queue_mapping_candidates,
+        )
+        cfg = reconciliation_config()
+        rec = reconcile(
+            transactions,
+            categorized_items,
+            date_window_days=int(cfg.get("date_window_days", 5)),
+            amount_tolerance=Decimal(str(cfg.get("amount_tolerance", 0.03))),
+            match_amount_tolerance=Decimal(str(cfg.get("match_amount_tolerance", cfg.get("amount_tolerance", 0.03)))),
+            amazon_extended_date_window_days=cfg.get("amazon_extended_date_window_days"),
+            amazon_extended_date_min_amount=Decimal(str(cfg.get("amazon_extended_date_min_amount", 10.00))),
+        )
+        for month in months:
+            write_month_outputs(month, Path("data/processed") / month, transactions, categorized_items, rec, coverage)
+        if state_store is not None and persist_record_state:
+            state_store.upsert_transactions(transactions, import_batch_id)
+            state_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
+        if analytics_store is not None:
+            analytics_store.upsert_transactions(transactions, import_batch_id)
+            analytics_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
+            for name, df in rec.items():
+                if name != "items":
+                    analytics_store.write_table(name, df, import_batch_id)
+            analytics_store.write_table("category_rule_coverage", coverage, import_batch_id)
+        if write_review:
+            review_dir = review_output_dir or Path("data/processed") / "runs" / import_batch_id / "review"
+            write_review_outputs(review_dir, months, transactions, rec.get("items", categorized_items), rec)
+            return review_dir
+        return None
+    finally:
+        if state_store is not None:
+            state_store.close()
+        if analytics_store is not None:
+            analytics_store.close()
+
+
+def _month_range(start_month: str, end_month: str) -> list[str]:
+    try:
+        periods = pd.period_range(start=start_month, end=end_month, freq="M")
+    except ValueError as exc:
+        raise typer.BadParameter("Months must use YYYY-MM format.") from exc
+    months = [str(period) for period in periods]
+    if not months:
+        raise typer.BadParameter("End month must be the same as or after start month.")
+    return months
+
+
 def _echo_source_max_dates(records: list[SourceDateRecord]) -> None:
     typer.echo("Source max dates:")
     for record in records:
@@ -268,6 +387,69 @@ def _load_mapping_csv_store(path: Path | None):
             metadata=metadata,
         )
     return store
+
+
+def _reviewed_mapping_rows(df: pd.DataFrame, category_column: str) -> list[dict]:
+    required = {"mapping_type", "mapping_key", category_column}
+    missing = required - set(df.columns)
+    if missing:
+        raise typer.BadParameter(f"Reviewed mapping CSV missing required column(s): {sorted(missing)}")
+    allowed = taxonomy()
+    rows = []
+    seen: dict[tuple[str, str], str] = {}
+    for index, raw in enumerate(df.to_dict("records"), start=2):
+        category = str(raw.get(category_column, "") or "").strip()
+        if not category:
+            continue
+        if category not in allowed:
+            raise typer.BadParameter(f"Row {index} category is not in taxonomy: {category}")
+        mapping_type = str(raw.get("mapping_type", "") or "").strip()
+        mapping_key = str(raw.get("mapping_key", "") or "").strip()
+        if not mapping_type or not mapping_key:
+            raise typer.BadParameter(f"Row {index} must include mapping_type and mapping_key")
+        key = (mapping_type, mapping_key)
+        if key in seen and seen[key] != category:
+            raise typer.BadParameter(
+                f"Reviewed CSV has conflicting categories for {mapping_type}:{mapping_key}: {seen[key]} and {category}"
+            )
+        if key in seen:
+            continue
+        seen[key] = category
+        rows.append(
+            {
+                "mapping_type": mapping_type,
+                "mapping_key": mapping_key,
+                "category": category,
+                "metadata": _review_csv_metadata(raw, category_column),
+            }
+        )
+    return rows
+
+
+def _review_csv_metadata(row: dict, category_column: str) -> dict[str, object]:
+    metadata_keys = {
+        "reason",
+        "suggested_category",
+        "item_count",
+        "order_count",
+        "total_allocated",
+        "first_date",
+        "last_date",
+        "retailers",
+        "source_adapters",
+        "sample_original_descriptions",
+        "sample_normalized_descriptions",
+        "sample_item_ids",
+        "sample_order_ids",
+        "review_priority",
+    }
+    metadata = {
+        f"review_csv_{key}": value
+        for key, value in row.items()
+        if key in metadata_keys and str(value).strip()
+    }
+    metadata["review_csv_category_column"] = category_column
+    return metadata
 
 
 if __name__ == "__main__":

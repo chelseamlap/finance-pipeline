@@ -4,8 +4,34 @@ from pathlib import Path
 
 import pandas as pd
 
+from .identity import item_mapping_keys_for_retail_item
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .normalize import month_mask
+
+
+def write_period_outputs(
+    months: list[str],
+    processed_root: Path,
+    transactions: pd.DataFrame,
+    items: pd.DataFrame,
+    reconciliation: dict[str, pd.DataFrame],
+    category_rule_coverage: pd.DataFrame,
+) -> None:
+    for month in months:
+        write_month_outputs(month, processed_root / month, transactions, items, reconciliation, category_rule_coverage)
+
+
+def write_review_outputs(
+    out_dir: Path,
+    months: list[str],
+    transactions: pd.DataFrame,
+    items: pd.DataFrame,
+    reconciliation: dict[str, pd.DataFrame],
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write(run_summary(months, transactions, reconciliation), out_dir / "run_summary.csv")
+    _write(category_review(items), out_dir / "category_review.csv")
+    _write(reconciliation_review(reconciliation.get("reconciliation_detail", pd.DataFrame())), out_dir / "reconciliation_review.csv")
 
 
 def write_month_outputs(
@@ -40,11 +66,238 @@ def write_month_outputs(
     _write(monthly_rule_coverage, out_dir / "category_rule_coverage.csv")
 
 
+def run_summary(months: list[str], transactions: pd.DataFrame, reconciliation: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    rows = []
+    items = reconciliation.get("items", pd.DataFrame())
+    detail = reconciliation.get("reconciliation_detail", pd.DataFrame())
+    unmatched_simplifi = reconciliation.get("unmatched_simplifi_transactions", pd.DataFrame())
+    unmatched_orders = reconciliation.get("unmatched_retail_orders", pd.DataFrame())
+    review = reconciliation.get("items_needing_review", pd.DataFrame())
+    for month in months:
+        month_tx = _filter_by_month(transactions, "posted_date", month)
+        month_items = _filter_by_month(items, "transaction_date", month)
+        month_detail = _filter_by_month(detail, "transaction_date", month)
+        month_review = _filter_by_month(review, "transaction_date", month)
+        rows.append(
+            {
+                "month": month,
+                "transactions": len(month_tx),
+                "retail_items": len(month_items),
+                "retail_orders": _nunique_orders(month_detail),
+                "items_needing_review": len(month_review),
+                "unknown_category_items": _unknown_category_count(month_items),
+                "total_mismatch_orders": _status_count(month_detail, "total_mismatch"),
+                "unmatched_transactions": len(_filter_by_month(unmatched_simplifi, "posted_date", month)),
+                "unmatched_retail_orders": len(_filter_by_month(unmatched_orders, "transaction_date", month)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def category_review(items: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "mapping_type",
+        "mapping_key",
+        "reason",
+        "suggested_category",
+        "item_count",
+        "order_count",
+        "total_allocated",
+        "first_date",
+        "last_date",
+        "retailers",
+        "source_adapters",
+        "sample_original_descriptions",
+        "sample_normalized_descriptions",
+        "sample_item_ids",
+        "sample_order_ids",
+        "review_priority",
+    ]
+    if items.empty:
+        return pd.DataFrame(columns=columns)
+    df = items.copy()
+    review_mask = df.get("needs_review", pd.Series(False, index=df.index)).fillna(False)
+    unknown_mask = df.get("household_category", pd.Series("", index=df.index)).fillna("").astype(str).eq("Unknown_Review")
+    df = df[review_mask | unknown_mask].copy()
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    df["allocated_total"] = _numeric_column(df, "allocated_total")
+    df["_date"] = pd.to_datetime(df.get("transaction_date"), errors="coerce")
+    rows = []
+    for _, row in df.iterrows():
+        mapping_type, mapping_key = _first_item_mapping_key(row.to_dict())
+        reason = _category_review_reason(row)
+        rows.append(
+            {
+                "_mapping_type": mapping_type,
+                "_mapping_key": mapping_key,
+                "_reason": reason,
+                "_suggested_category": _suggested_category(row),
+                **row.to_dict(),
+            }
+        )
+    keyed = pd.DataFrame(rows)
+    grouped = keyed.groupby(["_mapping_type", "_mapping_key", "_reason", "_suggested_category"], dropna=False)
+    out_rows = []
+    for (mapping_type, mapping_key, reason, suggested), group in grouped:
+        dates = group["_date"].dropna()
+        out_rows.append(
+            {
+                "mapping_type": mapping_type,
+                "mapping_key": mapping_key,
+                "reason": reason,
+                "suggested_category": suggested,
+                "item_count": len(group),
+                "order_count": group.get("order_id", pd.Series(dtype=str)).fillna("").astype(str).nunique(),
+                "total_allocated": round(float(group["allocated_total"].sum()), 2),
+                "first_date": dates.min().date().isoformat() if not dates.empty else "",
+                "last_date": dates.max().date().isoformat() if not dates.empty else "",
+                "retailers": _sample_values(group, "retailer", limit=5),
+                "source_adapters": _sample_values(group, "source_adapter", limit=5),
+                "sample_original_descriptions": _sample_values(group, "item_description_raw", limit=4),
+                "sample_normalized_descriptions": _sample_values(group, "item_description_normalized", limit=4),
+                "sample_item_ids": _sample_values(group, "item_id", limit=5),
+                "sample_order_ids": _sample_values(group, "order_id", limit=5),
+                "review_priority": _review_priority(reason, len(group), float(group["allocated_total"].abs().sum())),
+            }
+        )
+    return pd.DataFrame(out_rows, columns=columns).sort_values(
+        ["review_priority", "total_allocated", "item_count"],
+        ascending=[True, False, False],
+    )
+
+
+def reconciliation_review(detail: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "retailer",
+        "order_id",
+        "transaction_date",
+        "status",
+        "mismatch_diagnostic",
+        "item_derived_total",
+        "retailer_source_grand_total",
+        "simplifi_reconciled_total",
+        "item_vs_retailer_difference",
+        "item_vs_simplifi_difference",
+        "matched_simplifi_transaction_id",
+        "review_priority",
+    ]
+    if detail.empty:
+        return pd.DataFrame(columns=columns)
+    df = detail.copy()
+    status = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
+    df = df[status.str.contains("total_mismatch|unmatched_transaction", regex=True)].copy()
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    for column in ["item_vs_retailer_difference", "item_vs_simplifi_difference", "item_derived_total"]:
+        df[column] = _numeric_column(df, column)
+    df["review_priority"] = df.apply(_reconciliation_priority, axis=1)
+    out = df.copy()
+    for column in columns:
+        if column not in out.columns:
+            out[column] = ""
+    out["_abs_gap"] = out[["item_vs_retailer_difference", "item_vs_simplifi_difference"]].abs().max(axis=1)
+    return out.sort_values(["review_priority", "_abs_gap"], ascending=[True, False])[columns]
+
+
 def _filter_by_month(df: pd.DataFrame, date_column: str, month: str) -> pd.DataFrame:
     out = df.copy()
     if out.empty or date_column not in out.columns:
         return out
     return out[month_mask(out[date_column], month)].copy()
+
+
+def _numeric_column(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series(0.0, index=df.index)
+    return pd.to_numeric(df[column], errors="coerce").fillna(0.0)
+
+
+def _nunique_orders(detail: pd.DataFrame) -> int:
+    if detail.empty or "order_id" not in detail.columns:
+        return 0
+    return int(detail["order_id"].fillna("").astype(str).nunique())
+
+
+def _unknown_category_count(items: pd.DataFrame) -> int:
+    if items.empty or "household_category" not in items.columns:
+        return 0
+    return int(items["household_category"].fillna("").astype(str).eq("Unknown_Review").sum())
+
+
+def _status_count(detail: pd.DataFrame, needle: str) -> int:
+    if detail.empty or "status" not in detail.columns:
+        return 0
+    return int(detail["status"].fillna("").astype(str).str.contains(needle, regex=False).sum())
+
+
+def _first_item_mapping_key(row: dict) -> tuple[str, str]:
+    keys = item_mapping_keys_for_retail_item(row)
+    if keys:
+        return keys[0]
+    item_id = str(row.get("item_id", "") or "").strip()
+    if item_id:
+        return "item_id", item_id
+    return "unknown", ""
+
+
+def _category_review_reason(row: pd.Series) -> str:
+    category = str(row.get("household_category", "") or "")
+    reason = str(row.get("review_reason", "") or "").strip()
+    if category == "Unknown_Review":
+        return "unknown_category"
+    if "mapping_conflict" in reason:
+        return "mapping_conflict"
+    if "total_mismatch" in reason:
+        return "reconciliation_total_mismatch"
+    if "unmatched_transaction" in reason:
+        return "reconciliation_unmatched_transaction"
+    return reason or "needs_review"
+
+
+def _suggested_category(row: pd.Series) -> str:
+    category = str(row.get("household_category", "") or "").strip()
+    return "" if category == "Unknown_Review" else category
+
+
+def _sample_values(group: pd.DataFrame, column: str, limit: int) -> str:
+    if column not in group.columns:
+        return ""
+    values = []
+    for value in group[column].fillna("").astype(str):
+        value = value.strip()
+        if not value or value in values:
+            continue
+        values.append(value)
+        if len(values) >= limit:
+            break
+    return " | ".join(values)
+
+
+def _review_priority(reason: str, item_count: int, absolute_total: float) -> int:
+    if reason == "mapping_conflict":
+        return 1
+    if reason == "unknown_category" and (item_count >= 3 or absolute_total >= 50):
+        return 2
+    if reason == "unknown_category":
+        return 3
+    if reason.startswith("reconciliation_"):
+        return 4
+    return 5
+
+
+def _reconciliation_priority(row: pd.Series) -> int:
+    status = str(row.get("status", "") or "")
+    diagnostic = str(row.get("mismatch_diagnostic", "") or "")
+    if "total_mismatch" in status and "unmatched_transaction" in status:
+        return 1
+    if "component_mismatch" in diagnostic:
+        return 2
+    if "total_mismatch" in status:
+        return 3
+    if "unmatched_transaction" in status:
+        return 4
+    return 5
 
 
 def _reconciliation_summary(detail: pd.DataFrame, items_needing_review: pd.DataFrame) -> pd.DataFrame:
