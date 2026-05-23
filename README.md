@@ -253,6 +253,25 @@ python -m finance_pipeline.cli run-month \
   --skip-record-state
 ```
 
+For historical backfills across many months, export mappings once and use that CSV locally. This avoids repeated Firestore reads and keeps the backfill limited mostly by Google Sheets API reads:
+
+```bash
+python -m finance_pipeline.cli export-mappings \
+  --firestore-project spending-pipeline \
+  --output-dir data/processed/mapping_review
+
+for month in 2025-01 2025-02 2025-03; do
+  python -m finance_pipeline.cli run-month \
+    --month "$month" \
+    --mapping-csv data/processed/mapping_review/category_mappings.csv \
+    --skip-source-date-check \
+    --skip-mapping-queue \
+    --skip-record-state
+done
+```
+
+If Google Sheets returns a read quota error during a backfill, wait about a minute and resume from the failed month.
+
 ## Reconciliation
 
 Simplifi is the source of truth for posted financial transactions. Retail exports explain what was inside those transactions. If those two stories disagree, the pipeline preserves the disagreement and asks for review instead of inventing a balancing row.
