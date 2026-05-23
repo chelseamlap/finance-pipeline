@@ -136,6 +136,27 @@ def test_categorization_caches_mapping_lookups_for_repeated_items():
     assert store.get_calls[("asin", f"amazon:{df.loc[0, 'asin']}")] == 1
 
 
+def test_categorization_does_not_rewrite_existing_mapping_candidates():
+    df = amazon_order_history_reporter.load(Path("tests/fixtures/amazon_ohr.csv"), "batch")
+    df.loc[0, ["asin", "sku", "upc", "item_description_raw", "item_description_normalized", "merchant_raw", "merchant_normalized"]] = [
+        "",
+        "",
+        "",
+        "Mystery Object",
+        "mystery object",
+        "",
+        "",
+    ]
+    store = CountingCandidateStore()
+    categorize_items(df.iloc[[0]], mapping_store=store)
+    first_writes = store.candidate_writes
+
+    categorize_items(df.iloc[[0]], mapping_store=store)
+
+    assert first_writes == 1
+    assert store.candidate_writes == 1
+
+
 class CountingMappingStore(MemoryStateStore):
     def __init__(self):
         super().__init__()
@@ -145,6 +166,16 @@ class CountingMappingStore(MemoryStateStore):
         key = (mapping_type, mapping_key)
         self.get_calls[key] = self.get_calls.get(key, 0) + 1
         return super().get_mapping(mapping_type, mapping_key)
+
+
+class CountingCandidateStore(MemoryStateStore):
+    def __init__(self):
+        super().__init__()
+        self.candidate_writes = 0
+
+    def upsert_mapping_candidate(self, candidate):
+        self.candidate_writes += 1
+        return super().upsert_mapping_candidate(candidate)
 
 
 def test_accept_mapping_candidate_promotes_reviewed_mapping():

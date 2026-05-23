@@ -113,6 +113,37 @@ def test_run_month_can_skip_source_date_check(monkeypatch):
     assert called["source_dates"] is False
 
 
+def test_run_month_can_skip_record_state_persistence(monkeypatch):
+    import pandas as pd
+    import finance_pipeline.cli as cli
+
+    store = CountingStateStore()
+    monkeypatch.setattr(cli, "FirestoreStateStore", lambda project, prefix: store)
+    monkeypatch.setattr(cli, "_load_all_sources", lambda import_batch_id: (pd.DataFrame(), pd.DataFrame()))
+    monkeypatch.setattr(cli, "categorize_items", lambda items, mapping_store=None: (items, pd.DataFrame()))
+    monkeypatch.setattr(cli, "reconcile", lambda *args, **kwargs: {"items": pd.DataFrame()})
+    monkeypatch.setattr(cli, "write_month_outputs", lambda *args, **kwargs: None)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "run-month",
+            "--month",
+            "2026-05",
+            "--firestore-project",
+            "test-project",
+            "--skip-source-date-check",
+            "--skip-record-state",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert store.transaction_upserts == 0
+    assert store.retail_item_upserts == 0
+    assert store.closed is True
+
+
 def test_cli_accept_mapping_candidate_promotes_candidate(monkeypatch):
     import finance_pipeline.cli as cli
 
@@ -252,3 +283,22 @@ class FakeMappingStore:
                 "status": "needs_review",
             }
         ]
+
+
+class CountingStateStore(FakeMappingStore):
+    def __init__(self):
+        super().__init__()
+        self.transaction_upserts = 0
+        self.retail_item_upserts = 0
+        self.closed = False
+
+    def upsert_transactions(self, df, run_id):
+        self.transaction_upserts += 1
+        return len(df)
+
+    def upsert_retail_items(self, df, run_id):
+        self.retail_item_upserts += 1
+        return len(df)
+
+    def close(self):
+        self.closed = True

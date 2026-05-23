@@ -53,6 +53,7 @@ def ingest(
 def run_month(
     month: str = typer.Option(..., "--month"),
     check_source_dates: bool = typer.Option(True, "--check-source-dates/--skip-source-date-check", help="Print raw source max dates before loading sources."),
+    persist_record_state: bool = typer.Option(True, "--persist-record-state/--skip-record-state", help="Persist transaction and retail item state when Firestore is enabled."),
     firestore_project: Optional[str] = typer.Option(None, "--firestore-project", help="Google Cloud project for Firestore operational state."),
     firestore_prefix: str = typer.Option("finance_pipeline", "--firestore-prefix", help="Firestore collection prefix."),
     bigquery_project: Optional[str] = typer.Option(None, "--bigquery-project", help="Google Cloud project for BigQuery analytics tables."),
@@ -79,9 +80,10 @@ def run_month(
         amazon_extended_date_min_amount=Decimal(str(cfg.get("amazon_extended_date_min_amount", 10.00))),
     )
     write_month_outputs(month, Path("data/processed") / month, transactions, categorized_items, rec, coverage)
-    if state_store is not None:
+    if state_store is not None and persist_record_state:
         state_store.upsert_transactions(transactions, import_batch_id)
         state_store.upsert_retail_items(rec.get("items", categorized_items), import_batch_id)
+    if state_store is not None:
         state_store.close()
     if analytics_store is not None:
         analytics_store.upsert_transactions(transactions, import_batch_id)

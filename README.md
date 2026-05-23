@@ -215,6 +215,44 @@ python -m finance_pipeline.cli save-mapping \
   --category Groceries
 ```
 
+Export saved mappings and queued mapping candidates for review:
+
+```bash
+python -m finance_pipeline.cli export-mappings \
+  --firestore-project spending-pipeline \
+  --output-dir data/processed/mapping_review
+```
+
+This writes `category_mappings.csv` and `mapping_candidates.csv`. Candidates are created for unknown categories and mapping conflicts. Review candidates by `candidate_id`, original description, normalized description, retailer, reason, and any suggested category.
+
+Accept a candidate into reviewed saved mappings:
+
+```bash
+python -m finance_pipeline.cli accept-mapping-candidate \
+  --firestore-project spending-pipeline \
+  --candidate-id <candidate_id> \
+  --category Groceries
+```
+
+Reject a candidate without creating a mapping:
+
+```bash
+python -m finance_pipeline.cli reject-mapping-candidate \
+  --firestore-project spending-pipeline \
+  --candidate-id <candidate_id> \
+  --note "not enough information"
+```
+
+After accepting or rejecting candidates, rerun the month and export mappings again. Use `--skip-source-date-check` on quick reruns to avoid spending Google Sheets quota twice in the same minute. During category-rule tuning, use `--skip-record-state` to avoid rewriting transaction and retail item state while still using Firestore saved mappings and queue behavior:
+
+```bash
+python -m finance_pipeline.cli run-month \
+  --month 2026-05 \
+  --firestore-project spending-pipeline \
+  --skip-source-date-check \
+  --skip-record-state
+```
+
 ## Reconciliation
 
 Simplifi is the source of truth for posted financial transactions. Retail exports explain what was inside those transactions. If those two stories disagree, the pipeline preserves the disagreement and asks for review instead of inventing a balancing row.

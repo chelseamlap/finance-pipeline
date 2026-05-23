@@ -24,11 +24,20 @@ search_overrides:
   - rule_id: override:la_roche_posay_skin_milk
     category: Health_Personal_Care
     all_keywords: ["la roche posay", "skin milk"]
+  - rule_id: override:dramamine_nausea
+    category: Health_Personal_Care
+    keywords: ["dramamine"]
+  - rule_id: override:infant_ibuprofen
+    category: Health_Personal_Care
+    all_keywords: ["ibuprofen"]
+  - rule_id: override:not_your_mothers_hair
+    category: Health_Personal_Care
+    all_keywords: ["not your mother", "hair"]
 
 keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
-    keywords: ["strawberries", "banana", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "berries", "chicken"]
+    keywords: ["strawberries", "strawberry", "banana", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
     keywords: ["restaurant", "pizza", "takeout", "doordash", "ubereats"]
@@ -37,19 +46,19 @@ keyword_rules:
     keywords: ["wine", "beer", "liquor", "vodka", "whiskey", "tequila", "cabernet", "sauvignon", "prosecco"]
   - rule_id: kw:household
     category: Household
-    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "soap"]
+    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors"]
   - rule_id: kw:kids
     category: Kids
-    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toy", "baby"]
+    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not"]
   - rule_id: kw:health
     category: Health_Personal_Care
-    keywords: ["toothpaste", "shampoo", "vitamin", "lotion", "medicine"]
+    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental"]
   - rule_id: kw:home_improvement
     category: Home_Improvement
-    keywords: ["paint", "screw", "hardware", "garden", "tool"]
+    keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "grill brush", "hooks rail", "wall mounted"]
   - rule_id: kw:clothing
     category: Clothing
-    keywords: ["shirt", "pants", "socks", "shoes", "jacket"]
+    keywords: ["shirt", "shirts", "pants", "socks", "shoes", "sandals", "jacket", "bra", "bras", "blouse", "blouses", "jeans", "underwear", "sleeve", "tops", "leggings", "joggers", "maternity", "clothing"]
   - rule_id: kw:pets
     category: Pets
     keywords: ["dog food", "cat food", "pet", "litter"]
@@ -58,7 +67,7 @@ keyword_rules:
     keywords: ["gift", "birthday", "wrapping"]
   - rule_id: kw:electronics
     category: Electronics
-    keywords: ["usb", "charger", "battery", "headphones", "cable"]
+    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount"]
   - rule_id: kw:subscription
     category: Subscriptions
     keywords: ["subscription", "membership"]

@@ -15,6 +15,10 @@ class CachedMappingStore:
             key = (str(mapping.get("mapping_type", "")), str(mapping.get("mapping_key", "")))
             if all(key):
                 self.mapping_cache[key] = mapping
+        for candidate in getattr(mapping_store, "list_mapping_candidates", lambda: [])():
+            candidate_id = str(candidate.get("candidate_id", ""))
+            if candidate_id:
+                self.candidate_ids.add(candidate_id)
 
     def get_mapping(self, mapping_type: str, mapping_key: str) -> dict | None:
         key = (mapping_type, mapping_key)
