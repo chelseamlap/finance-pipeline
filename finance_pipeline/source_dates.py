@@ -10,7 +10,7 @@ from finance_pipeline.loaders.generic import apply_aliases, read_tables, source_
 from finance_pipeline.source_registry import registry
 
 
-DATE_COLUMNS = ("posted_date", "transaction_date")
+DATE_COLUMNS = ("posted_date", "transaction_date", "ordered_at")
 
 
 @dataclass(frozen=True)
@@ -120,7 +120,7 @@ def max_date_for_file(source: str, file: Path) -> tuple[date | None, int, str]:
             for column in DATE_COLUMNS:
                 if column not in df.columns:
                     continue
-                parsed = pd.to_datetime(df[column], errors="coerce")
+                parsed = pd.to_datetime(df[column], errors="coerce", utc=True)
                 valid = parsed.dropna()
                 table_dated_rows += int(valid.size)
                 if valid.empty:
@@ -143,4 +143,6 @@ def _alias_groups(source: str) -> tuple[str, ...]:
         return ("simplifi",)
     if source == "orderpro":
         return ("orderpro_orders", "orderpro_items", "retail_item")
+    if source == "store_receipt_extract":
+        return ("store_receipt_extract_orders", "store_receipt_extract_items", "retail_item")
     return ("retail_item",)

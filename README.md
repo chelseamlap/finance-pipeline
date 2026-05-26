@@ -8,9 +8,10 @@ Accuracy and repeatability are the priority. The pipeline does not silently infe
 
 - **Simplifi:** manual CSV export.
 - **Amazon:** Amazon Order History Reporter CSVs first. If the same folder contains both order-level and item-level Reporter exports, the loader combines them so order totals can be allocated across item rows.
+- **Target + Costco Chrome extension:** `store-receipt-extract` CSV exports under `data/raw/store_receipt_extract/` are the preferred Target/Costco itemized source. Drop both exported files, `orders_<retailer>_*.csv` and `order_items_<retailer>_*.csv`, into the folder. Full JSON exports are also supported as a fallback. When extension data exists for Target or Costco, matching OrderPro store folders are skipped to avoid double counting.
 - **OrderPro:** generic adapter for Target, Costco, Amazon, or any supported retailer under `data/raw/orderpro/{store}/`. Full-year OrderPro sheets are expected and safe to rerun.
 - **Costco:** Costco Receipt Downloader JSON fallback.
-- **Target:** OrderPro export first; manual Target files are supported as a fallback.
+- **Target:** Chrome extension or OrderPro export first; manual Target files are supported as a fallback.
 
 ## Folder Structure
 
@@ -29,6 +30,7 @@ finance-pipeline/
       amazon/
       costco/
       target/
+      store_receipt_extract/
       orderpro/
     processed/
     rejected/
@@ -56,7 +58,7 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-Expected test result is currently `45 passed`.
+Expected test result is currently `88 passed`.
 
 ## Google Cloud Setup
 
@@ -161,10 +163,13 @@ python -m finance_pipeline.cli ingest --source simplifi --path data/raw/simplifi
 python -m finance_pipeline.cli ingest --source amazon_order_history_reporter --path data/raw/amazon/amazon_order_history_reporter/
 python -m finance_pipeline.cli ingest --source amazon_order_history_exporter --path data/raw/amazon/amazon_order_history_exporter/
 python -m finance_pipeline.cli ingest --source costco_receipt_downloader --path data/raw/costco/costco_receipt_downloader/
+python -m finance_pipeline.cli ingest --source store_receipt_extract --path data/raw/store_receipt_extract/
 python -m finance_pipeline.cli ingest --source orderpro --store target --path data/raw/orderpro/target/
 python -m finance_pipeline.cli ingest --source orderpro --store costco --path data/raw/orderpro/costco/
 python -m finance_pipeline.cli ingest --source orderpro --store amazon --path data/raw/orderpro/amazon/
 ```
+
+`store_receipt_extract` handles the Chrome extension CSV shape directly, including `order_channel`, `category_label`, and Target adjustment columns. If a Target item row has no item name, the loader creates a fallback description from retailer, SKU, and category and flags the row for review. If every item in a Target order is missing line totals but the order total is present, the loader evenly allocates the order total across the items and flags those rows for review instead of dropping the spend.
 
 Run a month locally:
 

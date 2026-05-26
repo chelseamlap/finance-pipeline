@@ -369,6 +369,56 @@ def test_run_period_loads_sources_once_and_writes_each_month(monkeypatch, tmp_pa
     assert calls["review_dir"] == tmp_path
 
 
+def test_load_all_sources_skips_orderpro_stores_replaced_by_store_receipt_extract(monkeypatch, tmp_path):
+    import pandas as pd
+    import finance_pipeline.cli as cli
+
+    raw = tmp_path / "raw"
+    (raw / "store_receipt_extract").mkdir(parents=True)
+    (raw / "orderpro" / "target").mkdir(parents=True)
+    (raw / "orderpro" / "costco").mkdir(parents=True)
+    (raw / "orderpro" / "amazon").mkdir(parents=True)
+    (raw / "store_receipt_extract" / "orders_target.csv").write_text(
+        "retailer,order_id,ordered_at,total\ntarget,T-1,2026-05-01,1\n"
+    )
+    (raw / "store_receipt_extract" / "orders_costco.csv").write_text(
+        "retailer,order_id,ordered_at,total\ncostco,C-1,2026-05-01,1\n"
+    )
+    calls = []
+
+    monkeypatch.setattr(
+        cli,
+        "registry",
+        lambda: {
+            "store_receipt_extract": {
+                "loader": "finance_pipeline.loaders.store_receipt_extract",
+                "output": "retail_items",
+                "default_path": str(raw / "store_receipt_extract"),
+            },
+            "orderpro": {
+                "loader": "finance_pipeline.loaders.orderpro",
+                "output": "retail_items",
+                "default_path": str(raw / "orderpro"),
+            },
+        },
+    )
+
+    def fake_load_source(source, path, import_batch_id, store=None):
+        calls.append((source, path.name, store))
+        return pd.DataFrame([{"item_id": f"{source}-{store or 'all'}"}])
+
+    monkeypatch.setattr(cli, "load_source", fake_load_source)
+    monkeypatch.setattr(cli, "dedupe_retail_items", lambda items: items)
+
+    _, items = cli._load_all_sources("batch")
+
+    assert ("store_receipt_extract", "store_receipt_extract", None) in calls
+    assert ("orderpro", "amazon", "amazon") in calls
+    assert ("orderpro", "target", "target") not in calls
+    assert ("orderpro", "costco", "costco") not in calls
+    assert items["item_id"].tolist() == ["store_receipt_extract-all", "orderpro-amazon"]
+
+
 def test_cli_accept_mapping_candidate_promotes_candidate(monkeypatch):
     import finance_pipeline.cli as cli
 

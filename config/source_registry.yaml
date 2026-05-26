@@ -23,6 +23,10 @@ sources:
     output: retail_items
     retailer: target
     default_path: data/raw/target/manual/
+  store_receipt_extract:
+    loader: finance_pipeline.loaders.store_receipt_extract
+    output: retail_items
+    default_path: data/raw/store_receipt_extract/
   orderpro:
     loader: finance_pipeline.loaders.orderpro
     output: retail_items

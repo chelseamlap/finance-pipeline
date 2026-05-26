@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -12,6 +13,7 @@ from .categorize import categorize_items, taxonomy
 from .export import write_month_outputs, write_review_outputs
 from .logging_config import configure_logging
 from .dedupe import dedupe_retail_items
+from .loaders.generic import source_files
 from .mappings import accept_mapping_candidate, export_mapping_tables, reject_mapping_candidate
 from .models import RETAIL_ITEM_COLUMNS, TRANSACTION_COLUMNS
 from .reconcile import reconcile
@@ -248,13 +250,17 @@ def export(month: str = typer.Option(..., "--month")) -> None:
 def _load_all_sources(import_batch_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     tx_frames: list[pd.DataFrame] = []
     item_frames: list[pd.DataFrame] = []
-    for source, meta in registry().items():
+    sources = registry()
+    store_receipt_retailers = _store_receipt_extract_retailers(Path(sources.get("store_receipt_extract", {}).get("default_path", "")))
+    for source, meta in sources.items():
         default_path = Path(meta["default_path"])
         if source == "orderpro":
             base = default_path
             if not base.exists():
                 continue
             for store_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+                if store_dir.name in store_receipt_retailers:
+                    continue
                 df = load_source(source, store_dir, import_batch_id, store_dir.name)
                 if not df.empty:
                     item_frames.append(df)
@@ -273,6 +279,34 @@ def _load_all_sources(import_batch_id: str) -> tuple[pd.DataFrame, pd.DataFrame]
     items = pd.concat(item_frames, ignore_index=True) if item_frames else pd.DataFrame(columns=RETAIL_ITEM_COLUMNS)
     items = dedupe_retail_items(items)
     return transactions, items
+
+
+def _store_receipt_extract_retailers(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    retailers: set[str] = set()
+    for file in source_files(path):
+        if file.suffix.lower() == ".csv":
+            try:
+                df = pd.read_csv(file, dtype=str, keep_default_na=False, usecols=lambda col: col == "retailer")
+            except Exception:
+                continue
+            if "retailer" in df.columns:
+                retailers.update(df["retailer"].fillna("").str.lower().str.strip().loc[lambda s: s != ""].unique())
+        elif file.suffix.lower() == ".json":
+            try:
+                with file.open("r", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+            except Exception:
+                continue
+            if isinstance(payload, dict) and isinstance(payload.get("orders"), list):
+                for order in payload["orders"]:
+                    if not isinstance(order, dict):
+                        continue
+                    retailer = str(order.get("retailer", "")).lower().strip()
+                    if retailer:
+                        retailers.add(retailer)
+    return retailers & {"target", "costco"}
 
 
 def _run_period(
