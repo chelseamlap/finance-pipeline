@@ -89,10 +89,10 @@ def categorize_row(row: pd.Series, rules: dict, allowed: set[str], mapping_store
 
     source_category_raw = str(row.get("source_category_raw", "") or "").strip()
     if source_category_raw:
-        for prefix, category in rules.get("category_prefix_rules", {}).items():
-            if source_category_raw.startswith(prefix):
+        for fragment, category in rules.get("category_prefix_rules", {}).items():
+            if fragment in source_category_raw:
                 return _validated(
-                    {"category": category, "rule_id": f"category_prefix:{prefix}"}, allowed, "category_prefix"
+                    {"category": category, "rule_id": f"category_prefix:{fragment}"}, allowed, "category_prefix"
                 )
 
     for rule in rules.get("keyword_rules", []):

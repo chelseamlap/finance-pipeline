@@ -124,6 +124,29 @@ category_prefix_rules:
   "Pet Supplies": Pets
   "Automotive": Gas_Auto
   "Grocery & Gourmet Food": Groceries
+  # Costco category_label fragments (source_category_raw is "<native code>: <label>")
+  "Dry Grocery": Groceries
+  "Dairy & Refrigerated": Groceries
+  "Snacks & Candy": Groceries
+  "Frozen": Groceries
+  "Meat": Groceries
+  "Produce": Groceries
+  "Bakery": Groceries
+  "Deli (Prepared)": Groceries
+  "Service Deli & Rotisserie": Groceries
+  "Deposits & Fees": Groceries
+  "Sundries & Household": Household
+  "Housewares": Household
+  "Domestics": Household
+  "Sporting Goods": Household
+  "Health & Beauty": Health_Personal_Care
+  "Health & OTC": Health_Personal_Care
+  "Pharmacy": Health_Personal_Care
+  "Kids & Infant Apparel": Kids
+  "Apparel": Clothing
+  "Beer & Alcohol": Alcohol
+  "Seasonal & Hardware": Home_Improvement
+  "Membership & Services": Subscriptions
 
 retailer_fallbacks:
   costco:
