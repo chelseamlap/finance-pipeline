@@ -7,6 +7,12 @@ exact_identifiers:
     TGT-DIAPERS-1:
       category: Kids
       rule_id: sku:TGT-DIAPERS-1
+    "14713512":
+      category: Gifts
+      rule_id: sku:14713512
+    "14713506":
+      category: Gifts
+      rule_id: sku:14713506
   upc:
     "0001111041700":
       category: Groceries
@@ -82,3 +88,7 @@ retailer_fallbacks:
   costco:
     category: Groceries
     rule_id: retailer:costco
+
+zero_value_skus:
+  - "14713512"
+  - "14713506"
