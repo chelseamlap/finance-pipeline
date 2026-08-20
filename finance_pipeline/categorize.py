@@ -87,6 +87,14 @@ def categorize_row(row: pd.Series, rules: dict, allowed: set[str], mapping_store
         if _rule_matches_description(desc, rule):
             return _validated(rule, allowed, "search_override")
 
+    source_category_raw = str(row.get("source_category_raw", "") or "").strip()
+    if source_category_raw:
+        for prefix, category in rules.get("category_prefix_rules", {}).items():
+            if source_category_raw.startswith(prefix):
+                return _validated(
+                    {"category": category, "rule_id": f"category_prefix:{prefix}"}, allowed, "category_prefix"
+                )
+
     for rule in rules.get("keyword_rules", []):
         if _rule_matches_description(desc, rule):
             return _validated(rule, allowed, "keyword")

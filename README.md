@@ -231,9 +231,10 @@ Edit `config/merchant_rules.yaml` for deterministic local categorization. Catego
 2. exact SKU, ASIN, or UPC
 3. exact normalized item description
 4. search overrides for specific phrase combinations
-5. broad keyword rules
-6. retailer fallback
-7. `Unknown_Review`
+5. `category_prefix_rules` matches against the retailer's own `source_category_raw` (for example Amazon's `Clothing, Shoes & Jewelry›...` export category)
+6. broad keyword rules
+7. retailer fallback
+8. `Unknown_Review`
 
 Categories must exist in `config/category_taxonomy.yaml`; new categories are never invented at runtime.
 

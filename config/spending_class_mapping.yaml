@@ -48,4 +48,6 @@ retail_categories:
   Subscriptions: Fixed Required
   Gas_Auto: Variable Required
   Travel: One-Time Project
+  Books: Discretionary
+  Entertainment_Other: Discretionary
   Unknown_Review: Review

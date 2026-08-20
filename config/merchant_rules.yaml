@@ -3,6 +3,9 @@ exact_identifiers:
     B000COFFEE:
       category: Groceries
       rule_id: asin:B000COFFEE
+    B0CHTKNWBL:
+      category: Gifts
+      rule_id: asin:B0CHTKNWBL
   sku:
     TGT-DIAPERS-1:
       category: Kids
@@ -25,6 +28,27 @@ exact_descriptions:
   paper towels:
     category: Household
     rule_id: desc:paper_towels
+  hokum:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_hokum
+  the naked gun:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_the_naked_gun
+  weapons:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_weapons
+  28 years later the bone temple:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_28_years_later_the_bone_temple
+  good fortune:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_good_fortune
+  over your dead body:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_over_your_dead_body
+  the long walk:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_the_long_walk
 
 search_overrides:
   - rule_id: override:la_roche_posay_skin_milk
@@ -83,6 +107,23 @@ keyword_rules:
   - rule_id: kw:travel
     category: Travel
     keywords: ["hotel", "airline", "rental car", "flight"]
+
+category_prefix_rules:
+  "Clothing, Shoes & Jewelry": Clothing
+  "Home & Kitchen": Household
+  "Books": Books
+  "Tools & Home Improvement": Home_Improvement
+  "Patio, Lawn & Garden": Home_Improvement
+  "Appliances": Home_Improvement
+  "Electronics": Electronics
+  "Cell Phones & Accessories": Electronics
+  "Toys & Games": Kids
+  "Baby Products": Kids
+  "Health & Household": Health_Personal_Care
+  "Beauty & Personal Care": Health_Personal_Care
+  "Pet Supplies": Pets
+  "Automotive": Gas_Auto
+  "Grocery & Gourmet Food": Groceries
 
 retailer_fallbacks:
   costco:
