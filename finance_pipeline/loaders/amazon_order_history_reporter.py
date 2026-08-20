@@ -44,7 +44,7 @@ def _load_order_totals(path: Path) -> dict[str, dict]:
         for _, raw_row in df.iterrows():
             data = raw_row.to_dict()
             order_id = str_or_blank(data, "order id")
-            if not order_id or order_id.lower() == "order id":
+            if not order_id or order_id.lower() == "order id" or not str_or_blank(data, "date"):
                 continue
             orders[order_id] = {
                 "transaction_date": data.get("date"),
