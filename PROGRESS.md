@@ -10,6 +10,16 @@ Google Cloud project: `spending-pipeline`. Auth is personal `gcloud`/Application
 
 BigQuery (`spending-pipeline.finance_pipeline`) is the durable, queryable store. Seven views: `v_item_level_monthly_category`, `v_simplifi_monthly_category`, `v_blended_monthly_category`, `v_monthly_category_totals` (by household category, monthly), `v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot` (by budget type, monthly), and `v_spend_detail` (row-level, not aggregated — connect directly in Google Sheets to eyeball categorization by sorting on amount). All three monthly rollups carry `retailer` (`NULL` for Simplifi-sourced rows) so they can be broken down per retailer, not just blended. Two skills in `.claude/skills/`: `categorization-quality` (read-only audit, dollar-ranked punch list) and `unknown-category-review` (LLM-assisted review of `Unknown_Review` items that writes confirmed fixes straight into `merchant_rules.yaml`).
 
+## Next Steps
+
+**Reconciliation match-quality audit — picking this up next session.** Different axis from categorization: `matched_simplifi_transaction_id` pairs an item-level order with a Simplifi transaction using a date window (±5 days, Amazon gets an extended ±10-day fallback for orders ≥$10) plus amount tolerance ($0.03 accounting / $0.05 matching) — fuzzy enough that a close-but-wrong transaction could plausibly get matched instead of the right one, especially two same-week same-amount orders from the same retailer. Nothing currently checks whether a *correct* match is actually correct, only whether *some* match happened within tolerance.
+
+Sketch for a `reconciliation-quality` skill (sibling to `categorization-quality`, not a merge — reads `reconciliation_detail.csv` and the `matched_simplifi_transaction_id` linkage rather than the category files):
+- Flag matches sitting near the tolerance edge (`item_vs_simplifi_difference` close to $0.03/$0.05) rather than exact — those are the ones most likely to be a coincidental match, not a real one.
+- Flag the classic swap signature: two items/transactions in the same date window where each is individually within tolerance of the *other's* counterpart, not just its own.
+- For any retailer/week with more than one matched order, verify no other unmatched or differently-matched transaction in the same window would have been an equally good or better fit.
+- Same reporting discipline as the other two skills: dollar-ranked findings, never auto-fixes reconciliation config, human confirms before anything changes.
+
 ## Recent Work (2026-08-19 through 2026-08-20)
 
 - Got Target, Costco, and Amazon item-level data flowing end to end alongside Simplifi; fixed a Target gift-card overcounting bug and an Amazon Google-Sheets footer-row crash.
@@ -25,7 +35,6 @@ BigQuery (`spending-pipeline.finance_pipeline`) is the durable, queryable store.
 
 - **$297.55 / 164 rows still in `Unknown_Review`** after the `unknown-category-review` pass — includes deodorant/antiperspirant (no `kw:health` coverage yet) and a handful of Costco toy-department items (X-Shot, Monopoly, a "Ninjacto" appliance) deliberately left unguessed rather than overfit to single SKU codes.
 - **Target reconciliation is outside the 5% target for some recent months** (July 2026: 12% gap, driven by 1 unmatched retail order — `unmatched_retail_orders.csv`/`reconciliation_detail.csv` for that month have the specifics). Amazon and Costco are both comfortably within threshold. Worth a look next time reconciliation gets attention, not urgent.
-- **Reconciliation match quality hasn't been audited** — categorization quality has a skill now, but "did reconciliation pair the right item-level order with the right Simplifi transaction" (vs. a close-but-wrong one within the date/amount tolerance) doesn't yet. Discussed, not built.
 - **`Kids:Kids Activities`, `Fitness:Gym`, `Financial`, `Auto & Transport:Tolls`** are still sitting in the generic `Review` spending class — small dollar amounts, genuinely ambiguous whether they're `Variable Required` or `Sinking`, left for a real decision rather than a guess.
 - **CSV-only option for sharing with FIL** — explicitly deferred, not started.
 - **Looker Studio dashboard** off the BigQuery views — recommended, not yet built.
