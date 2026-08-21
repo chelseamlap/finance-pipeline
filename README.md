@@ -1,17 +1,18 @@
 # Finance Pipeline
 
-Deterministic local parsing for Simplifi transactions and item-level retail exports. The pipeline normalizes source files into canonical CSVs, categorizes item purchases with stable saved mappings and YAML rules, reconciles retail orders back to Simplifi transactions, and emits Google Sheets/dashboard-friendly monthly outputs.
+Deterministic local parsing for Simplifi transactions and item-level retail exports. The pipeline normalizes source files into canonical CSVs, categorizes item purchases with YAML rules, reconciles retail orders back to Simplifi transactions, and loads the result into BigQuery for querying.
 
 Accuracy and repeatability are the priority. The pipeline does not silently infer, drop, or hide money: malformed rows are rejected with source context, missing required fields produce warnings, and reconciliation differences are surfaced for review.
 
 ## Source Strategy
 
-- **Simplifi:** manual CSV export.
-- **Amazon:** Amazon Order History Reporter CSVs first. If the same folder contains both order-level and item-level Reporter exports, the loader combines them so order totals can be allocated across item rows.
-- **Target + Costco Chrome extension:** `store-receipt-extract` CSV exports under `data/raw/store_receipt_extract/` are the preferred Target/Costco itemized source. Drop both exported files, `orders_<retailer>_*.csv` and `order_items_<retailer>_*.csv`, into the folder. Full JSON exports are also supported as a fallback. When extension data exists for Target or Costco, matching OrderPro store folders are skipped to avoid double counting.
-- **OrderPro:** generic adapter for Target, Costco, Amazon, or any supported retailer under `data/raw/orderpro/{store}/`. Full-year OrderPro sheets are expected and safe to rerun.
-- **Costco:** Costco Receipt Downloader JSON fallback.
-- **Target:** Chrome extension or OrderPro export first; manual Target files are supported as a fallback.
+Three real sources, all plain CSV:
+
+- **Simplifi:** manual CSV export, dropped into `data/raw/simplifi/`. Simplifi's export has no stable transaction ID, so **replace** the file on each refresh rather than adding a second one alongside it — leaving both in the folder double-counts every transaction in the overlapping date range.
+- **Target + Costco, via `store-receipt-extract`:** a homegrown Chrome extension (separate repo) that exports paired `orders_<retailer>_*.csv` / `order_items_<retailer>_*.csv` files into `data/raw/store_receipt_extract/`. This loader dedupes same-order duplicate exports by filename timestamp on its own, so it's safe to leave old exports in the folder if you want — the latest one for a given order wins.
+- **Amazon, via Amazon Order History Reporter:** a browser extension that exports paired order-level and item-level CSVs into `data/raw/amazon/amazon_order_history_reporter/`. When both are present the loader allocates order totals across item rows; it falls back to order-level-only or a generic parse if the item-level export isn't there.
+
+Adding a fourth source (e.g. Walmart) later? See `docs/adding-a-source.md`.
 
 ## Folder Structure
 
@@ -27,286 +28,118 @@ finance-pipeline/
   data/
     raw/
       simplifi/
-      amazon/
-      costco/
-      target/
+      amazon/amazon_order_history_reporter/
       store_receipt_extract/
-      orderpro/
     processed/
     rejected/
+  docs/
+    adding-a-source.md
   finance_pipeline/
   tests/
 ```
 
-Monthly outputs are written to `data/processed/YYYY-MM/`. Raw exports, processed outputs, rejected rows, credentials, and other private data should stay uncommitted.
+Monthly outputs are written to `data/processed/YYYY-MM/`. Raw exports, processed outputs, rejected rows, credentials, and other private data should stay uncommitted (see `.gitignore`).
 
-For real household runs, this repo can live locally while the durable state lives in Google Cloud:
-
-- **Firestore:** operational state for saved mappings, record fingerprints, and run state.
-- **BigQuery:** analytical tables for canonical transactions, retail items, reconciliation outputs, and reporting.
-- **Google Sheets:** human review/output surface for mappings, review queues, and summaries.
+BigQuery holds the durable, queryable copy of everything — project `spending-pipeline`, dataset `finance_pipeline`. The per-month local CSVs are a secondary debugging artifact, not the source of truth once BigQuery is loaded.
 
 ## First Setup
 
-Run these commands from the repo root:
-
 ```bash
-cd /Users/chelsea.lapepeikis/Desktop/personal-repo/finance-pipeline
+cd finance-pipeline
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 pytest -q
 ```
 
-Expected test result is currently `88 passed`.
+Expected test result is currently `46 passed`.
 
 ## Google Cloud Setup
 
-The Google Cloud project name and ID are both:
-
-```text
-spending-pipeline
-```
-
-Install and initialize `gcloud` if needed, then select the project:
+The project name and ID are both `spending-pipeline`. This uses your personal Google account via `gcloud`, not a service account — simpler for a single-user local pipeline.
 
 ```bash
+brew install --cask gcloud-cli   # if gcloud isn't already installed
+gcloud auth login                 # browser login, for the gcloud CLI itself
 gcloud config set project spending-pipeline
+gcloud services enable bigquery.googleapis.com
+gcloud auth application-default login   # browser login, for the Python client library
 ```
 
-Enable the APIs used by the pipeline:
+BigQuery requires a billing account attached to the project even to stay within the free tier (10GB storage / 1TB queries per month free — this dataset is a few MB, so expect $0/month in practice). Set one up once at `console.cloud.google.com/billing` and link it to `spending-pipeline` if `gcloud billing projects describe spending-pipeline` shows `billingEnabled: false`.
 
-```bash
-gcloud services enable sheets.googleapis.com firestore.googleapis.com bigquery.googleapis.com
+Query views live in the `finance_pipeline` dataset:
+
+- `v_item_level_monthly_category` — Target/Costco/Amazon item-level detail by month/retailer/category.
+- `v_simplifi_monthly_category` — Simplifi spend, excluding anything already covered by item-level detail (no double-counting) and crosswalked onto the household category taxonomy.
+- `v_blended_monthly_category` — the two combined.
+- `v_monthly_category_totals` — pivoted monthly category totals; the one to query day-to-day, e.g.:
+
+```sql
+SELECT month, amount FROM `spending-pipeline.finance_pipeline.v_monthly_category_totals`
+WHERE category = 'Groceries' ORDER BY month
 ```
 
-Create the default Firestore Native database once. Firestore database location is effectively a project-level choice, so use the intended region before any production data is written:
-
-```bash
-gcloud firestore databases create --project spending-pipeline --location=nam5
-```
-
-Create or reuse the local service account:
-
-```bash
-gcloud iam service-accounts create finance-pipeline-local \
-  --display-name="Finance Pipeline Local"
-```
-
-Grant the roles needed for local pipeline runs:
-
-```bash
-gcloud projects add-iam-policy-binding spending-pipeline \
-  --member="serviceAccount:finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com" \
-  --role="roles/datastore.user"
-
-gcloud projects add-iam-policy-binding spending-pipeline \
-  --member="serviceAccount:finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com" \
-  --role="roles/bigquery.dataEditor"
-
-gcloud projects add-iam-policy-binding spending-pipeline \
-  --member="serviceAccount:finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com" \
-  --role="roles/bigquery.jobUser"
-```
-
-Create a local key file:
-
-```bash
-mkdir -p ~/.config/finance-pipeline
-
-gcloud iam service-accounts keys create \
-  ~/.config/finance-pipeline/spending-pipeline-service-account.json \
-  --iam-account=finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com
-```
-
-Point Application Default Credentials-compatible libraries at that key:
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/finance-pipeline/spending-pipeline-service-account.json"
-```
-
-To make that persistent for new terminal windows, append the same export to `~/.zshrc`:
-
-```bash
-printf '\nexport GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/finance-pipeline/spending-pipeline-service-account.json"\n' >> ~/.zshrc
-source ~/.zshrc
-```
-
-Verify the file path, but do not run the JSON file as a command:
-
-```bash
-echo "$GOOGLE_APPLICATION_CREDENTIALS"
-test -f "$GOOGLE_APPLICATION_CREDENTIALS" && echo "credentials file found"
-```
-
-Share any Google Sheets or Drive folders that contain `.gsheet` shortcuts with this service account email:
-
-```text
-finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com
-```
-
-The loader reads `.gsheet` shortcuts through the Google Sheets API. The local `.gsheet` file only contains a spreadsheet ID; the actual spreadsheet must be shared with the service account.
+For simple visuals on top of these, point Looker Studio at the views directly — no code needed.
 
 ## Monthly Workflow
 
-1. Refresh or export source files into the matching `data/raw/...` folder.
-2. Run individual ingests when you want to inspect one source.
-3. Run the reporting month or month range.
-4. Review the consolidated review files first, then drill into month folders only when needed.
-5. Add saved mappings or YAML rules for recurring items.
-6. Commit only code/config/doc/test changes, never raw or processed household data.
-
-Smoke-test individual sources:
+1. Re-export Simplifi (replace, don't append — see Source Strategy above), and refresh Target/Costco/Amazon exports if there's new purchase activity.
+2. Run the full history through `run-period`, not just the new month — it's idempotent (BigQuery upserts by `transaction_id`/`item_id`), so there's no incremental-run bookkeeping to think about:
 
 ```bash
-python -m finance_pipeline.cli ingest --source simplifi --path data/raw/simplifi/
-python -m finance_pipeline.cli ingest --source amazon_order_history_reporter --path data/raw/amazon/amazon_order_history_reporter/
-python -m finance_pipeline.cli ingest --source amazon_order_history_exporter --path data/raw/amazon/amazon_order_history_exporter/
-python -m finance_pipeline.cli ingest --source costco_receipt_downloader --path data/raw/costco/costco_receipt_downloader/
-python -m finance_pipeline.cli ingest --source store_receipt_extract --path data/raw/store_receipt_extract/
-python -m finance_pipeline.cli ingest --source orderpro --store target --path data/raw/orderpro/target/
-python -m finance_pipeline.cli ingest --source orderpro --store costco --path data/raw/orderpro/costco/
-python -m finance_pipeline.cli ingest --source orderpro --store amazon --path data/raw/orderpro/amazon/
+finance-pipeline run-period \
+  --start-month 2025-01 \
+  --end-month 2026-08 \
+  --bigquery-project spending-pipeline \
+  --bigquery-dataset finance_pipeline \
+  --bigquery-location US
+```
+
+3. Check the consolidated review output it prints, under `data/processed/runs/<run_id>/review/`:
+   - `run_summary.csv` — month-by-month health check.
+   - `category_review.csv` — grouped category decisions needing a look, with sample descriptions and impact.
+   - `reconciliation_review.csv` — order-level mismatches sorted by review priority.
+4. Add rules to `config/merchant_rules.yaml` for anything recurring that landed in `Unknown_Review` or came out miscategorized.
+5. Query BigQuery for the numbers.
+6. Commit only code/config/doc/test changes, never raw or processed household data.
+
+Smoke-test one source in isolation:
+
+```bash
+finance-pipeline ingest --source simplifi --path data/raw/simplifi/
+finance-pipeline ingest --source amazon_order_history_reporter --path data/raw/amazon/amazon_order_history_reporter/
+finance-pipeline ingest --source store_receipt_extract --path data/raw/store_receipt_extract/
 ```
 
 `store_receipt_extract` handles the Chrome extension CSV shape directly, including `order_channel`, `category_label`, and Target adjustment columns. If a Target item row has no item name, the loader creates a fallback description from retailer, SKU, and category and flags the row for review. If every item in a Target order is missing line totals but the order total is present, the loader evenly allocates the order total across the items and flags those rows for review instead of dropping the spend.
 
-Run a month locally:
+Run a single month locally, without touching BigQuery:
 
 ```bash
-python -m finance_pipeline.cli run-month --month 2026-05
-python -m finance_pipeline.cli export --month 2026-05
+finance-pipeline run-month --month 2026-05
+finance-pipeline export --month 2026-05
 ```
 
-`run-month` means "produce outputs for this reporting month." It does not mean the raw imports are only that month. The loaders may read full-year files, which is expected for OrderPro. The export step filters monthly output files, reconciliation detail, unmatched files, and review queues back to the requested month.
+`run-month` means "produce outputs for this reporting month." It does not mean the raw imports are only that month — loaders may read full-year files. The export step filters monthly output files, reconciliation detail, unmatched files, and review queues back to the requested month.
 
-Run a month range in one shot:
+## Category Rules
 
-```bash
-python -m finance_pipeline.cli run-period \
-  --start-month 2025-01 \
-  --end-month 2026-05 \
-  --firestore-project spending-pipeline
-```
+Edit `config/merchant_rules.yaml` for categorization — this is the entire categorization mechanism; there's no learned/persisted override layer sitting in front of it. Categorization priority is:
 
-`run-period` loads all raw sources once, categorizes once, reconciles once, and then writes each requested `data/processed/YYYY-MM/` folder from the same in-memory result. Use it for normal monthly reruns and historical backfills whenever the raw exports cover more than one month. It also writes consolidated review CSVs under `data/processed/runs/<run_id>/review/`:
-
-- `run_summary.csv` for month-by-month health checks.
-- `category_review.csv` for grouped category decisions by mapping key, with sample descriptions and impact.
-- `reconciliation_review.csv` for order-level mismatches sorted by review priority.
-
-To apply category review decisions, add an `accepted_category` column to `category_review.csv` and fill it only for rows that should become saved mappings. Leave rows blank when they need more investigation or should be handled by a broader YAML rule. Then import the reviewed rows:
-
-```bash
-python -m finance_pipeline.cli import-reviewed-mappings \
-  --review-csv data/processed/runs/<run_id>/review/category_review.csv \
-  --firestore-project spending-pipeline \
-  --dry-run
-
-python -m finance_pipeline.cli import-reviewed-mappings \
-  --review-csv data/processed/runs/<run_id>/review/category_review.csv \
-  --firestore-project spending-pipeline \
-  --reviewed-by chelsea
-```
-
-The import validates categories against `config/category_taxonomy.yaml`, skips blank decisions, rejects conflicting duplicate decisions, and stores review context such as reason, sample descriptions, counts, dates, and totals with the saved mapping for auditability.
-
-Run a month while persisting state to Firestore and analytics to BigQuery:
-
-```bash
-python -m finance_pipeline.cli run-month \
-  --month 2026-05 \
-  --firestore-project spending-pipeline \
-  --bigquery-project spending-pipeline \
-  --bigquery-dataset finance_pipeline
-```
-
-The stable record identifiers and row fingerprints let full-year OrderPro exports be reprocessed without treating unchanged rows as new work.
-
-## Category Rules And Saved Mappings
-
-Edit `config/merchant_rules.yaml` for deterministic local categorization. Categorization priority is:
-
-1. saved Firestore mapping when Firestore is used
-2. exact SKU, ASIN, or UPC
-3. exact normalized item description
-4. search overrides for specific phrase combinations
-5. `category_prefix_rules` matches against the retailer's own `source_category_raw` (for example Amazon's `Clothing, Shoes & Jewelry›...` export category)
-6. broad keyword rules
-7. retailer fallback
-8. `Unknown_Review`
+1. exact SKU, ASIN, or UPC
+2. exact normalized item description
+3. search overrides for specific phrase combinations
+4. `category_prefix_rules` matches against the retailer's own `source_category_raw` (for example Amazon's `Clothing, Shoes & Jewelry›...` export category, or Costco's `category_label`)
+5. broad keyword rules
+6. retailer fallback
+7. `Unknown_Review`
 
 Categories must exist in `config/category_taxonomy.yaml`; new categories are never invented at runtime.
 
-Saved mappings prevent repeated categorization work. If `target:whole milk` is saved as `Groceries`, future matching rows reuse that decision before YAML keyword matching or any future LLM categorization step.
-
 Use search overrides for specific exceptions that should beat broad keyword rules. For example, broad `milk` can map to `Groceries`, while `la roche posay` plus `skin milk` can map to `Health_Personal_Care` or another intentional category.
 
-Save a mapping directly to Firestore:
-
-```bash
-python -m finance_pipeline.cli save-mapping \
-  --firestore-project spending-pipeline \
-  --type description \
-  --key "target:whole milk" \
-  --category Groceries
-```
-
-Export saved mappings and queued mapping candidates for review:
-
-```bash
-python -m finance_pipeline.cli export-mappings \
-  --firestore-project spending-pipeline \
-  --output-dir data/processed/mapping_review
-```
-
-This writes `category_mappings.csv` and `mapping_candidates.csv`. Candidates are created for unknown categories and mapping conflicts. Review candidates by `candidate_id`, original description, normalized description, retailer, reason, and any suggested category.
-
-Accept a candidate into reviewed saved mappings:
-
-```bash
-python -m finance_pipeline.cli accept-mapping-candidate \
-  --firestore-project spending-pipeline \
-  --candidate-id <candidate_id> \
-  --category Groceries
-```
-
-Reject a candidate without creating a mapping:
-
-```bash
-python -m finance_pipeline.cli reject-mapping-candidate \
-  --firestore-project spending-pipeline \
-  --candidate-id <candidate_id> \
-  --note "not enough information"
-```
-
-After accepting or rejecting candidates, rerun the month and export mappings again. Use `--skip-source-date-check` on quick reruns to avoid spending Google Sheets quota twice in the same minute. During category-rule tuning, use `--skip-record-state` to avoid rewriting transaction and retail item state while still using Firestore saved mappings and queue behavior:
-
-```bash
-python -m finance_pipeline.cli run-month \
-  --month 2026-05 \
-  --firestore-project spending-pipeline \
-  --skip-source-date-check \
-  --skip-record-state
-```
-
-For historical backfills across many months, export mappings once and use that CSV locally. This avoids repeated Firestore reads and keeps the run limited to one Google Sheets read pass:
-
-```bash
-python -m finance_pipeline.cli export-mappings \
-  --firestore-project spending-pipeline \
-  --output-dir data/processed/mapping_review
-
-python -m finance_pipeline.cli run-period \
-  --start-month 2025-01 \
-  --end-month 2026-05 \
-  --mapping-csv data/processed/mapping_review/category_mappings.csv \
-  --skip-source-date-check \
-  --skip-mapping-queue \
-  --skip-record-state
-```
-
-If Google Sheets returns a read quota error during a backfill, wait about a minute and rerun `run-period`. The command reads sources once per invocation rather than once per month.
+For Simplifi's own transaction categories (not item-level retail categorization), `config/simplifi_category_mapping.yaml` normalizes raw category strings and `config/spending_class_mapping.yaml` maps both those and the household categories above onto a `Fixed Required` / `Variable Required` / `Discretionary` / `One-Time Project` / `Reimbursable` spending-class rollup. A category with no explicit mapping falls to `Review` rather than being silently excluded from totals — real spend should never disappear because a Simplifi category string doesn't have a rule yet.
 
 ## Reconciliation
 
@@ -338,8 +171,6 @@ data/processed/YYYY-MM/items_needing_review.csv
 
 Reconciliation detail is intentionally layered because Simplifi is the source of truth for money that actually hit the bank or card. The main comparison columns are `simplifi_amount` for the signed Simplifi transaction amount, `simplifi_reconciled_total` for the comparable spend/refund total, `item_derived_total` for the sum of item rows after allocated components, and `retailer_source_grand_total` for the retailer/export order total. Pairwise differences are written as `item_vs_simplifi_difference`, `retailer_vs_simplifi_difference`, and `item_vs_retailer_difference`. Matching is sign-aware: retailer charges match Simplifi spending transactions, and retailer refunds/credits match Simplifi credits instead of matching by absolute value alone.
 
-Before categorization and reconciliation, same-order duplicate OrderPro item rows are reconciled against retailer `source_order_total` when available. For each duplicate item group, the pipeline keeps the number of repeated rows that makes the item subtotal layer closest to the retailer order subtotal, while preserving rows that differ by quantity, price, subtotal, or source totals. If an OrderPro order has only one unique item kind and the exported placeholder subtotal cannot explain the retailer order subtotal, that item subtotal is set to `source_order_total` with a dedupe note; this handles Costco return/placeholder lines such as `/1899652` and low-value `VET. RX` rows.
-
 For item rows, `item_subtotal_raw` preserves the exported line subtotal, `line_subtotal_derived` records the pipeline's best line subtotal, and `item_subtotal` is the active subtotal used for allocation and reconciliation. When an export appears to provide a per-unit subtotal for a multi-quantity item, for example quantity `2`, unit price `$6.99`, item total `$6.99`, the pipeline derives the active subtotal from `quantity * unit_price` and records `item_subtotal_derivation_notes`.
 
 Amazon Order History Reporter item-level exports treat order-level `refund` values as separate negative adjustment rows instead of discounts on the purchased items. The adjustment rows use order ids like `<order_id>:refund`, keep `source_category_raw=refund-adjustment`, and remain reviewable/matchable on their own. This keeps the original order charge from being undercounted while still preserving refund activity for categorization and reconciliation.
@@ -352,12 +183,10 @@ If item-derived order totals still differ from the retailer charged total, the p
 
 ## Troubleshooting
 
-- `ACCESS_TOKEN_SCOPE_INSUFFICIENT`: you are probably using user ADC from `gcloud auth application-default login`; use the service account key through `GOOGLE_APPLICATION_CREDENTIALS` instead.
-- `The caller does not have permission`: share the actual Google Sheet or containing Drive folder with `finance-pipeline-local@spending-pipeline.iam.gserviceaccount.com`.
-- `This app is blocked`: avoid the OAuth app flow for this local pipeline and use the service account setup above.
-- `.gsheet` imports return zero rows: confirm the spreadsheet tabs have recognizable headers listed in `config/retailer_schema_aliases.yaml`.
-- Rejected rows appear in logs: check whether they are true data rows or footer/summary rows. Real data issues should be fixed in aliases or loaders, not by editing output CSVs.
+- `.gsheet` imports return zero rows: the loader can read Google Sheets shortcut files through the Sheets API if a source ever needs it (currently unused — all three real sources are plain CSV), but the spreadsheet needs recognizable headers listed in `config/retailer_schema_aliases.yaml`.
+- Rejected rows appear in logs: check whether they are true data rows or footer/summary rows (e.g. a Google Sheets `=SUBTOTAL(...)` export artifact). Real data issues should be fixed in aliases or loaders, not by editing output CSVs.
 - Unknown categories: add exact identifiers, exact descriptions, or careful search overrides before broad keywords.
+- BigQuery `BadRequest`/JSON parse errors on load: check for `NaN`/`Infinity` sneaking into a payload — see the fix in `finance_pipeline/storage/bigquery_store.py` for the pandas dtype gotcha that caused this once already.
 
 ## What This Does Not Do
 
@@ -367,4 +196,5 @@ If item-derived order totals still differ from the retailer charged total, the p
 - It does not create categories outside the configured taxonomy.
 - It does not treat retailer-provided categories as household categories by default.
 - It does not overwrite raw exports.
+- It does not persist a learned/saved category-mapping layer — `config/merchant_rules.yaml` is the entire categorization mechanism, edited by hand.
 - It is not a budgeting app, rules UI, or opaque AI categorizer.
