@@ -73,14 +73,23 @@ Query views live in the `finance_pipeline` dataset:
 - `v_item_level_monthly_category` — Target/Costco/Amazon item-level detail by month/retailer/category.
 - `v_simplifi_monthly_category` — Simplifi spend, excluding anything already covered by item-level detail (no double-counting) and crosswalked onto the household category taxonomy.
 - `v_blended_monthly_category` — the two combined.
-- `v_monthly_category_totals` — pivoted monthly category totals; the one to query day-to-day, e.g.:
+- `v_monthly_category_totals` — monthly totals per household category; the one to query day-to-day for "how much did we spend on X", e.g.:
 
 ```sql
 SELECT month, amount FROM `spending-pipeline.finance_pipeline.v_monthly_category_totals`
 WHERE category = 'Groceries' ORDER BY month
 ```
 
-For simple visuals on top of these, point Looker Studio at the views directly — no code needed.
+Same pattern, rolled up by budget type instead of category — built from each row's `spending_class` on both the item and transaction tables, same no-double-counting logic:
+
+- `v_monthly_spending_class_totals` — long format, `(month, spending_class, amount)`.
+- `v_monthly_spending_class_pivot` — wide format, one column per spending class, e.g.:
+
+```sql
+SELECT * FROM `spending-pipeline.finance_pipeline.v_monthly_spending_class_pivot` ORDER BY month
+```
+
+For simple visuals on top of any of these, point Looker Studio at the views directly — no code needed.
 
 ## Monthly Workflow
 
@@ -139,7 +148,21 @@ Categories must exist in `config/category_taxonomy.yaml`; new categories are nev
 
 Use search overrides for specific exceptions that should beat broad keyword rules. For example, broad `milk` can map to `Groceries`, while `la roche posay` plus `skin milk` can map to `Health_Personal_Care` or another intentional category.
 
-For Simplifi's own transaction categories (not item-level retail categorization), `config/simplifi_category_mapping.yaml` normalizes raw category strings and `config/spending_class_mapping.yaml` maps both those and the household categories above onto a `Fixed Required` / `Variable Required` / `Discretionary` / `One-Time Project` / `Reimbursable` spending-class rollup. A category with no explicit mapping falls to `Review` rather than being silently excluded from totals — real spend should never disappear because a Simplifi category string doesn't have a rule yet.
+### Spending class (budget type)
+
+For Simplifi's own transaction categories (not item-level retail categorization), `config/simplifi_category_mapping.yaml` normalizes raw category strings onto a `NN Label:Sub` shape, and `config/spending_class_mapping.yaml` maps the leading two-digit prefix — plus the household categories above, for item-level rows — onto a spending class:
+
+| Prefix | Spending class | What lives there |
+|---|---|---|
+| `01` | Fixed Required | Same amount every period, contractually required: subscriptions, insurance, debt payments, daycare. |
+| `02` | Variable Required | Necessary but fluctuates: groceries, routine gas fill-ups, utilities, household consumables, personal care. |
+| `03` | Discretionary | Flexible, could be cut without real hardship: restaurants, alcohol, clothing, entertainment. |
+| `04` | Reimbursable | Work expenses expected to come back as income. |
+| `05` | Sinking | Irregular but recurring in aggregate — budget for it annually rather than expecting it flat month to month: home improvement/DIY, gifts, travel, car repairs/registration, annual passes, tuition. |
+
+`Sinking` is deliberately not called "one-time" — for a household that does frequent DIY/home projects, car repairs, and travel, none of that is truly one-off, it's just lumpy. The distinction from `Variable Required` is planning horizon: variable-required spend is week-to-week and inelastic; sinking spend is annual-ish and worth setting aside for ahead of time. A single Simplifi category can split across two spending classes when the real distinction is planning horizon, not the category itself — see `Auto & Transport` in `config/simplifi_category_mapping.yaml`: `Gas & Fuel` stays `Variable Required`, but `Service & Parts` and `Registration` route to `Sinking`.
+
+A category with no explicit mapping falls to `Review` rather than being silently excluded from totals — real spend should never disappear because a Simplifi category string doesn't have a rule yet. Query either rollup with `v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot` (see BigQuery Setup above).
 
 ## Reconciliation
 
