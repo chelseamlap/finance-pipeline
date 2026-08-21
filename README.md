@@ -89,7 +89,13 @@ Same pattern, rolled up by budget type instead of category — built from each r
 SELECT * FROM `spending-pipeline.finance_pipeline.v_monthly_spending_class_pivot` ORDER BY month
 ```
 
-`v_spend_detail` is the row-level counterpart to all of the above — one row per item or unmatched transaction (not aggregated to a month), with `category`, `spending_class`, `category_confidence`, `category_signal` (the rule id or raw Simplifi category that produced it), and `amount`. Connect it directly in Google Sheets (Data → Data connectors → BigQuery) and sort/filter by amount within a category to spot miscategorization by eye — this is what actually caught two real bugs during development: a Costco retailer-fallback rule defaulting unlabeled general merchandise to `Groceries` (a $695.74 shed among them), and an `apple` keyword rule catching Apple-brand electronics instead of just the fruit. See the `categorization-quality` skill (`.claude/skills/`) for the fuller audit procedure this view supports.
+`v_spend_detail` is the row-level counterpart to all of the above — one row per item or unmatched transaction (not aggregated to a month), with `category`, `spending_class`, `category_confidence`, `category_signal` (the rule id or raw Simplifi category that produced it), and `amount`. Connect it directly in Google Sheets (Data → Data connectors → BigQuery) and sort/filter by amount within a category to spot miscategorization by eye — this is what actually caught two real bugs during development: a Costco retailer-fallback rule defaulting unlabeled general merchandise to `Groceries` (a $695.74 shed among them), and an `apple` keyword rule catching Apple-brand electronics instead of just the fruit.
+
+`retailer` is `NULL` on Simplifi-sourced rows in every view above (there's no single retailer for a non-itemized transaction) but present and real for item-level rows — filter or group on it to break any of these down by Target/Costco/Amazon.
+
+Two skills in `.claude/skills/` support ongoing categorization quality:
+- `categorization-quality` — read-only audit procedure across both categorization layers; produces a dollar-ranked punch list, never edits config.
+- `unknown-category-review` — reviews `Unknown_Review` items with LLM judgment, proposes rule-level fixes (missing keywords, not just one-off matches), and — only on confirmation — writes them into `merchant_rules.yaml` directly, the same file a human would hand-edit. First run cut `Unknown_Review` from $2,215.44 to $297.55.
 
 For simple visuals on top of any of these, point Looker Studio at the views directly — no code needed.
 
