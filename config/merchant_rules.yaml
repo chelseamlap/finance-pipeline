@@ -68,6 +68,7 @@ keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
     keywords: ["strawberries", "strawberry", "banana", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella"]
+    exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
     keywords: ["restaurant", "pizza", "takeout", "doordash", "ubereats"]
@@ -97,7 +98,7 @@ keyword_rules:
     keywords: ["gift", "birthday", "wrapping"]
   - rule_id: kw:electronics
     category: Electronics
-    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount"]
+    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount", "magic keyboard", "magic trackpad", "magic mouse"]
   - rule_id: kw:subscription
     category: Subscriptions
     keywords: ["subscription", "membership"]
@@ -148,10 +149,13 @@ category_prefix_rules:
   "Seasonal & Hardware": Home_Improvement
   "Membership & Services": Subscriptions
 
-retailer_fallbacks:
-  costco:
-    category: Groceries
-    rule_id: retailer:costco
+# Intentionally empty: a Costco retailer_fallback defaulting unlabeled items to
+# Groceries used to live here, but it silently miscategorized ~$1,277 of general
+# merchandise (a shed, toys, a weed killer, a Monopoly game) that has no
+# category_label from the receipt export. category_prefix_rules already covers
+# every real Costco department that DOES have a label; anything left over is
+# genuinely unknown and should surface in category_review.csv, not be guessed.
+retailer_fallbacks: {}
 
 zero_value_skus:
   - "14713512"

@@ -89,6 +89,8 @@ Same pattern, rolled up by budget type instead of category — built from each r
 SELECT * FROM `spending-pipeline.finance_pipeline.v_monthly_spending_class_pivot` ORDER BY month
 ```
 
+`v_spend_detail` is the row-level counterpart to all of the above — one row per item or unmatched transaction (not aggregated to a month), with `category`, `spending_class`, `category_confidence`, `category_signal` (the rule id or raw Simplifi category that produced it), and `amount`. Connect it directly in Google Sheets (Data → Data connectors → BigQuery) and sort/filter by amount within a category to spot miscategorization by eye — this is what actually caught two real bugs during development: a Costco retailer-fallback rule defaulting unlabeled general merchandise to `Groceries` (a $695.74 shed among them), and an `apple` keyword rule catching Apple-brand electronics instead of just the fruit. See the `categorization-quality` skill (`.claude/skills/`) for the fuller audit procedure this view supports.
+
 For simple visuals on top of any of these, point Looker Studio at the views directly — no code needed.
 
 ## Monthly Workflow
