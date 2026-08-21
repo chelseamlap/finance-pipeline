@@ -9,6 +9,7 @@ administrative:
   Transfer: Transfer
   Credit Card Payment: Transfer
   Balance Adjustment: Transfer
+  Loans: Transfer
   360 Checking: Excluded
   Chase Freedom: Excluded
   Joint WROS - TOD: Excluded
@@ -24,8 +25,10 @@ administrative:
   Interest Earned: Income
   On-Call Pay: Income
   Other Income: Income
+  Parent gift: Income
   Federal Tax: Tax
   State Tax: Tax
+  Taxes: Tax
   College Savings: Savings
   Uncategorized: Excluded
   NA: Excluded
