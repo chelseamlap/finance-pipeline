@@ -3,10 +3,19 @@ exact_identifiers:
     B000COFFEE:
       category: Groceries
       rule_id: asin:B000COFFEE
+    B0CHTKNWBL:
+      category: Gifts
+      rule_id: asin:B0CHTKNWBL
   sku:
     TGT-DIAPERS-1:
       category: Kids
       rule_id: sku:TGT-DIAPERS-1
+    "14713512":
+      category: Gifts
+      rule_id: sku:14713512
+    "14713506":
+      category: Gifts
+      rule_id: sku:14713506
   upc:
     "0001111041700":
       category: Groceries
@@ -19,6 +28,30 @@ exact_descriptions:
   paper towels:
     category: Household
     rule_id: desc:paper_towels
+  hokum:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_hokum
+  the naked gun:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_the_naked_gun
+  weapons:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_weapons
+  28 years later the bone temple:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_28_years_later_the_bone_temple
+  good fortune:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_good_fortune
+  over your dead body:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_over_your_dead_body
+  the long walk:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_the_long_walk
+  superman 2025 bonus x ray edition:
+    category: Entertainment_Other
+    rule_id: desc:amazon_video_superman_2025
 
 search_overrides:
   - rule_id: override:la_roche_posay_skin_milk
@@ -37,7 +70,8 @@ search_overrides:
 keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
-    keywords: ["strawberries", "strawberry", "banana", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella"]
+    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke"]
+    exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
     keywords: ["restaurant", "pizza", "takeout", "doordash", "ubereats"]
@@ -46,19 +80,19 @@ keyword_rules:
     keywords: ["wine", "beer", "liquor", "vodka", "whiskey", "tequila", "cabernet", "sauvignon", "prosecco"]
   - rule_id: kw:household
     category: Household
-    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors"]
+    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors", "tumbler", "mug", "skillet", "mop"]
   - rule_id: kw:kids
     category: Kids
-    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not"]
+    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels"]
   - rule_id: kw:health
     category: Health_Personal_Care
-    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental"]
+    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid"]
   - rule_id: kw:home_improvement
     category: Home_Improvement
-    keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "grill brush", "hooks rail", "wall mounted"]
+    keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "grill brush", "hooks rail", "wall mounted", "shed", "deckbox", "planter", "weedclear"]
   - rule_id: kw:clothing
     category: Clothing
-    keywords: ["shirt", "shirts", "pants", "socks", "shoes", "sandals", "jacket", "bra", "bras", "blouse", "blouses", "jeans", "underwear", "sleeve", "tops", "leggings", "joggers", "maternity", "clothing"]
+    keywords: ["shirt", "shirts", "pants", "socks", "shoes", "sandals", "jacket", "bra", "bras", "blouse", "blouses", "jeans", "underwear", "sleeve", "tops", "leggings", "joggers", "maternity", "clothing", "shorts", "vest"]
   - rule_id: kw:pets
     category: Pets
     keywords: ["dog food", "cat food", "pet", "litter"]
@@ -67,7 +101,7 @@ keyword_rules:
     keywords: ["gift", "birthday", "wrapping"]
   - rule_id: kw:electronics
     category: Electronics
-    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount"]
+    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount", "magic keyboard", "magic trackpad", "magic mouse"]
   - rule_id: kw:subscription
     category: Subscriptions
     keywords: ["subscription", "membership"]
@@ -78,7 +112,54 @@ keyword_rules:
     category: Travel
     keywords: ["hotel", "airline", "rental car", "flight"]
 
-retailer_fallbacks:
-  costco:
-    category: Groceries
-    rule_id: retailer:costco
+category_prefix_rules:
+  "Clothing, Shoes & Jewelry": Clothing
+  "Home & Kitchen": Household
+  "Books": Books
+  "Tools & Home Improvement": Home_Improvement
+  "Patio, Lawn & Garden": Home_Improvement
+  "Appliances": Home_Improvement
+  "Electronics": Electronics
+  "Cell Phones & Accessories": Electronics
+  "Toys & Games": Kids
+  "Baby Products": Kids
+  "Health & Household": Health_Personal_Care
+  "Beauty & Personal Care": Health_Personal_Care
+  "Pet Supplies": Pets
+  "Automotive": Gas_Auto
+  "Grocery & Gourmet Food": Groceries
+  # Costco category_label fragments (source_category_raw is "<native code>: <label>")
+  "Dry Grocery": Groceries
+  "Dairy & Refrigerated": Groceries
+  "Snacks & Candy": Groceries
+  "Frozen": Groceries
+  "Meat": Groceries
+  "Produce": Groceries
+  "Bakery": Groceries
+  "Deli (Prepared)": Groceries
+  "Service Deli & Rotisserie": Groceries
+  "Deposits & Fees": Groceries
+  "Sundries & Household": Household
+  "Housewares": Household
+  "Domestics": Household
+  "Sporting Goods": Household
+  "Health & Beauty": Health_Personal_Care
+  "Health & OTC": Health_Personal_Care
+  "Pharmacy": Health_Personal_Care
+  "Kids & Infant Apparel": Kids
+  "Apparel": Clothing
+  "Beer & Alcohol": Alcohol
+  "Seasonal & Hardware": Home_Improvement
+  "Membership & Services": Subscriptions
+
+# Intentionally empty: a Costco retailer_fallback defaulting unlabeled items to
+# Groceries used to live here, but it silently miscategorized ~$1,277 of general
+# merchandise (a shed, toys, a weed killer, a Monopoly game) that has no
+# category_label from the receipt export. category_prefix_rules already covers
+# every real Costco department that DOES have a label; anything left over is
+# genuinely unknown and should surface in category_review.csv, not be guessed.
+retailer_fallbacks: {}
+
+zero_value_skus:
+  - "14713512"
+  - "14713506"

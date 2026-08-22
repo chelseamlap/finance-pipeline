@@ -36,18 +36,20 @@ class BigQueryAnalyticsStore:
         if df.empty:
             return 0
         out = _json_ready(df.copy(), run_id)
+        records = _json_records(out)
         table_id = self._table_id(table_name)
         job_config = self.bigquery.LoadJobConfig(
             autodetect=True,
             write_disposition=self.bigquery.WriteDisposition.WRITE_APPEND,
         )
-        self.client.load_table_from_json(out.to_dict("records"), table_id, job_config=job_config).result()
+        self.client.load_table_from_json(records, table_id, job_config=job_config).result()
         return len(out)
 
     def _merge_dataframe(self, table_name: str, df: pd.DataFrame, key_column: str, run_id: str) -> int:
         if df.empty:
             return 0
         out = _json_ready(df.copy(), run_id)
+        records = _json_records(out)
         target = self._table_id(table_name)
         staging_name = f"_staging_{_safe_name(table_name)}_{_safe_name(run_id)}"
         staging = self._table_id(staging_name)
@@ -55,7 +57,7 @@ class BigQueryAnalyticsStore:
             autodetect=True,
             write_disposition=self.bigquery.WriteDisposition.WRITE_TRUNCATE,
         )
-        self.client.load_table_from_json(out.to_dict("records"), staging, job_config=job_config).result()
+        self.client.load_table_from_json(records, staging, job_config=job_config).result()
         if not self._table_exists(target):
             copy_job = self.client.copy_table(staging, target)
             copy_job.result()
@@ -109,9 +111,14 @@ class BigQueryAnalyticsStore:
 def _json_ready(df: pd.DataFrame, run_id: str) -> pd.DataFrame:
     out = df.copy()
     out["analytics_run_id"] = run_id
-    for column in out.columns:
-        out[column] = out[column].map(_json_value)
     return out
+
+
+def _json_records(df: pd.DataFrame) -> list[dict]:
+    # NaN/Decimal/date normalization happens on plain dicts, not DataFrame columns:
+    # pandas' string/nullable dtypes silently re-coerce a mapped-in None back to NaN
+    # on column reassignment, so values must be fixed up after to_dict() instead.
+    return [{key: _json_value(value) for key, value in record.items()} for record in df.to_dict("records")]
 
 
 def _json_value(value: object) -> object:
