@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-08-20
+Last updated: 2026-08-31
 
 ## Current State
 
@@ -8,7 +8,7 @@ The pipeline is past first-run and running against real household data (2025-01 
 
 Google Cloud project: `spending-pipeline`. Auth is personal `gcloud`/Application Default Credentials, not a service account — no Firestore, no saved-mapping persistence layer. `config/merchant_rules.yaml` is the entire categorization mechanism.
 
-BigQuery (`spending-pipeline.finance_pipeline`) is the durable, queryable store. Seven views: `v_item_level_monthly_category`, `v_simplifi_monthly_category`, `v_blended_monthly_category`, `v_monthly_category_totals` (by household category, monthly), `v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot` (by budget type, monthly), and `v_spend_detail` (row-level, not aggregated — connect directly in Google Sheets to eyeball categorization by sorting on amount). All three monthly rollups carry `retailer` (`NULL` for Simplifi-sourced rows) so they can be broken down per retailer, not just blended. Two skills in `.claude/skills/`: `categorization-quality` (read-only audit, dollar-ranked punch list) and `unknown-category-review` (LLM-assisted review of `Unknown_Review` items that writes confirmed fixes straight into `merchant_rules.yaml`).
+BigQuery (`spending-pipeline.finance_pipeline`) is the durable, queryable store. Eight views, now checked into `sql/views/*.sql` with `sql/views/deploy.sh` to (re)apply them in dependency order: `v_item_level_monthly_category`, `v_simplifi_monthly_category`, `v_blended_monthly_category`, `v_monthly_category_totals` (by household category, monthly), `v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot` (by budget type, monthly), `v_spend_detail` (row-level, not aggregated — connect directly in Google Sheets to eyeball categorization by sorting on amount), and `v_category_mapping` (grouped rule/category/merchant lookup with `$` totals for cross-checking against `merchant_rules.yaml`). `retailer` is populated from `merchant_normalized` everywhere, including Simplifi-only rows, for full drill-down during validation. Two skills in `.claude/skills/`: `categorization-quality` (read-only audit, dollar-ranked punch list) and `unknown-category-review` (LLM-assisted review of `Unknown_Review` items that writes confirmed fixes straight into `merchant_rules.yaml`).
 
 ## Next Steps
 
@@ -19,6 +19,17 @@ Sketch for a `reconciliation-quality` skill (sibling to `categorization-quality`
 - Flag the classic swap signature: two items/transactions in the same date window where each is individually within tolerance of the *other's* counterpart, not just its own.
 - For any retailer/week with more than one matched order, verify no other unmatched or differently-matched transaction in the same window would have been an equally good or better fit.
 - Same reporting discipline as the other two skills: dollar-ranked findings, never auto-fixes reconciliation config, human confirms before anything changes.
+
+## Recent Work (2026-08-31)
+
+Audited what actually lands in BigQuery, driven by the user's stated cadence (full 2-year Simplifi reload, twice a month) and goal (trust the blended-category totals enough to actually budget off them). Found and fixed four real issues, all now live:
+
+- **Simplifi's household-category crosswalk was two hand-duplicated, incomplete `CASE` statements embedded directly in `v_simplifi_monthly_category` and `v_spend_detail`**, reading the *raw* `simplifi_category` instead of the already-cleaned `simplifi_category_mapped` column. Silent `ELSE` passthrough meant anything not in the hardcoded list became its own ad hoc category — caught a real leak where "02 Costco" (a Simplifi category, cleaned by `config/simplifi_category_mapping.yaml` to "Household Operations") never reached that cleanup and sat as a standalone `Costco` bucket (~$4.6k) instead of folding into `Household`. Fixed by moving the crosswalk into Python (`normalize.py::blended_category_for_simplifi`, driven by new `config/simplifi_blended_category_mapping.yaml`), stored as a `blended_category` column on `transactions`, single-sourced and unit-tested. Design confirmed with the user: categories *without* an explicit rename entry stay exactly as Simplifi labels them (`Mortgage and Escrow` stays `Mortgage and Escrow`) — only the categories with a real item-level equivalent (groceries, restaurants, alcohol, health, home improvement, gas/auto, travel, gifts, entertainment) get renamed so the two sides roll up together.
+- **`items_needing_review` and four sibling tables (`reconciliation_summary`, `reconciliation_detail`, `unmatched_simplifi_transactions`, `unmatched_retail_orders`, `category_rule_coverage`) were pure `WRITE_APPEND`**, so every twice-monthly full-history rerun re-appended the entire dataset on top of the last one. After 7 historical runs, `items_needing_review` had ballooned to 10,145 rows for only 1,456 distinct items; `unmatched_simplifi_transactions` was at 20,853 rows. Fixed: `BigQueryAnalyticsStore.write_table` now uses `WRITE_TRUNCATE` (matches the actual workflow — always a full reload, never incremental, so replace-in-place is correct and simpler than adding merge keys). One clean rerun brought `items_needing_review` back to 1,449 rows / 1,449 distinct items / 1 run.
+- **`retailer` was hardcoded `NULL` on every Simplifi-sourced row** in all 3 monthly-rollup views and `v_spend_detail`. By design for the "no single retailer on a non-itemized card transaction" case, but during active validation the user needs to drill into merchant-level detail everywhere. Switched to `merchant_normalized` (already computed, already stored) so a Costco gas swipe, an unitemized Target run, or a Comcast bill all show up under their own retailer/merchant instead of one big NULL bucket. Confirmed: `NULL` retailer count in `v_blended_monthly_category` went from 319 rows to 0, with total spend unchanged (~$392.8k) — no rows lost or double-counted.
+- **Added `v_category_mapping`**: grouped from `retail_items` by `category_rule_id`/category/merchant with count and `$` total, sorted by `$` desc — a lookup surface to spot a rule sending real money to the wrong category and go fix it in `merchant_rules.yaml` (immediately surfaced the $695.74 shed at the top, same one `v_spend_detail` caught earlier).
+- All 8 view definitions are now checked into `sql/views/*.sql` with `sql/views/deploy.sh` — previously they existed only inside BigQuery itself (created via console/`bq` per the 2026-08-20 session), with no git history or reproducibility.
+- **Found but did not fix**: `BigQueryAnalyticsStore._merge_dataframe`'s `MERGE` statement fails outright if the target table is missing a column the incoming DataFrame has (hit this immediately — had to manually `ALTER TABLE transactions ADD COLUMN blended_category STRING` before the reload would run). Worth adding schema-evolution handling if the schema keeps changing at this pace.
 
 ## Recent Work (2026-08-19 through 2026-08-20)
 
@@ -38,6 +49,8 @@ Sketch for a `reconciliation-quality` skill (sibling to `categorization-quality`
 - **`Kids:Kids Activities`, `Fitness:Gym`, `Financial`, `Auto & Transport:Tolls`** are still sitting in the generic `Review` spending class — small dollar amounts, genuinely ambiguous whether they're `Variable Required` or `Sinking`, left for a real decision rather than a guess.
 - **CSV-only option for sharing with FIL** — explicitly deferred, not started.
 - **Looker Studio dashboard** off the BigQuery views — recommended, not yet built.
+- **`BigQueryAnalyticsStore._merge_dataframe` has no schema-evolution handling** — adding a new column to `CanonicalTransaction`/`CanonicalRetailItem` requires a manual `ALTER TABLE ... ADD COLUMN` against the live table before the next run, or the `MERGE` statement fails outright. Bit by this adding `blended_category` on 2026-08-31. Worth automating (`ALTER TABLE` from the staging table's schema diff, or `schema_update_options` on the merge) before the schema changes again.
+- **`retailer` on Simplifi rows is now `merchant_normalized`**, which is much more granular than a real retailer (e.g. "king soopers", "comcast", "heating air"). Fine for validation-stage drill-down (explicit user call, 2026-08-31); revisit once categorization confidence is high — either collapse non-retail merchants back to `NULL`/a coarser bucket, or keep it if the granularity turns out to be useful long-term.
 
 ## Where To Look
 
@@ -53,7 +66,7 @@ data/processed/YYYY-MM/store_reconciliation_summary.csv       per-store accuracy
 ```bash
 git status -sb
 source .venv/bin/activate
-pytest -q   # expect 46 passed
+pytest -q   # expect 54 passed
 ```
 
 Then run the normal monthly workflow from `README.md`.

@@ -33,15 +33,22 @@ class BigQueryAnalyticsStore:
         return self._merge_dataframe("retail_items", df, "item_id", run_id)
 
     def write_table(self, table_name: str, df: pd.DataFrame, run_id: str) -> int:
-        if df.empty:
-            return 0
-        out = _json_ready(df.copy(), run_id)
-        records = _json_records(out)
+        # WRITE_TRUNCATE, not WRITE_APPEND: this method backs snapshot-style tables
+        # (unmatched transactions, items needing review, coverage stats) that are
+        # fully regenerated on every run since run-period always replays full history
+        # (see README). Appending duplicated every prior run's rows on top -- caught
+        # after 7 runs had already left items_needing_review at ~7x its true size.
         table_id = self._table_id(table_name)
+        if df.empty:
+            if self._table_exists(table_id):
+                self.client.query(f"TRUNCATE TABLE `{table_id}`").result()
+            return 0
         job_config = self.bigquery.LoadJobConfig(
             autodetect=True,
-            write_disposition=self.bigquery.WriteDisposition.WRITE_APPEND,
+            write_disposition=self.bigquery.WriteDisposition.WRITE_TRUNCATE,
         )
+        out = _json_ready(df.copy(), run_id)
+        records = _json_records(out)
         self.client.load_table_from_json(records, table_id, job_config=job_config).result()
         return len(out)
 

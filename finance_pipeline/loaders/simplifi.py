@@ -8,7 +8,13 @@ import pandas as pd
 from finance_pipeline.loaders.generic import apply_aliases, read_file, reject_rows, source_files, str_or_blank
 from finance_pipeline.identity import DuplicateOrdinalTracker, row_fingerprint, stable_hash, transaction_identity_parts
 from finance_pipeline.models import CanonicalTransaction, money
-from finance_pipeline.normalize import map_simplifi_category, normalize_merchant, parse_date, spending_class_for_category
+from finance_pipeline.normalize import (
+    blended_category_for_simplifi,
+    map_simplifi_category,
+    normalize_merchant,
+    parse_date,
+    spending_class_for_category,
+)
 
 LOGGER = logging.getLogger(__name__)
 REQUIRED = {"posted_date", "merchant_raw", "amount"}
@@ -40,6 +46,7 @@ def load(path: Path, import_batch_id: str, store: str | None = None) -> pd.DataF
                     "amount": money(data["amount"]),
                     "simplifi_category": category_raw,
                     "simplifi_category_mapped": category_mapped,
+                    "blended_category": blended_category_for_simplifi(category_mapped),
                     "spending_class": spending_class_for_category(category_mapped),
                     "notes": str_or_blank(data, "notes"),
                     "file_source": str(file),

@@ -1,0 +1,27 @@
+# Renames applied on top of simplifi_category_mapped's top-level segment (numeric
+# prefix stripped, ":subcategory" dropped) so Simplifi spend blends correctly with
+# item-level household_category in v_blended_monthly_category / v_spend_detail.
+#
+# Anything not listed here passes through unchanged as its own Simplifi category
+# name (e.g. "Mortgage and Escrow", "Utilities", "Shopping") -- that's intentional,
+# not a gap. Only add an entry when a Simplifi category is a synonym for something
+# item-level purchases already use, so the two sides roll up together.
+"Groceries and foods": Groceries
+"Not home cooked foods": Restaurants_Takeout
+"Restaurants and Takeout": Restaurants_Takeout
+"Alcohol and bars": Alcohol
+"Kids Fixed": Kids
+"Health and medical": Health_Personal_Care
+"Personal Care": Health_Personal_Care
+"Entertainment other": Entertainment_Other
+"Entertainment": Entertainment_Other
+"Holiday and Gift": Gifts
+"Home Improvement": Home_Improvement
+"Home Maintenance": Home_Improvement
+"Auto & Transport": Gas_Auto
+"Transportation": Gas_Auto
+"Vacation and Travel": Travel
+# "02 Costco" cleans up to "Household Operations" via simplifi_category_mapping.yaml;
+# without this the view CASE statement used to leave it as a standalone "Costco"
+# bucket instead of folding it into real household spend.
+"Household Operations": Household

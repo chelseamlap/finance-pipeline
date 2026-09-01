@@ -67,6 +67,16 @@ def map_simplifi_category(category: object) -> str:
     return mapping.get(raw, raw)
 
 
+def blended_category_for_simplifi(category_mapped: object) -> str:
+    text = clean_string(category_mapped)
+    if not text:
+        return ""
+    root = text.split(":", 1)[0]
+    label = re.sub(r"^\d+\s+", "", root).strip()
+    mapping = load_yaml("simplifi_blended_category_mapping.yaml")
+    return mapping.get(label, label)
+
+
 def spending_class_for_category(category: object) -> str:
     text = clean_string(category)
     if not text:

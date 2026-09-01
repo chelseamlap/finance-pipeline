@@ -14,3 +14,8 @@ def test_simplifi_category_migration_and_spending_class():
     df = simplifi.load(Path("tests/fixtures/simplifi.csv"), "batch")
     assert df.loc[2, "simplifi_category_mapped"] == "02 Groceries and Foods"
     assert df.loc[2, "spending_class"] == "Variable Required"
+
+
+def test_simplifi_blended_category_passes_through_when_unmapped():
+    df = simplifi.load(Path("tests/fixtures/simplifi.csv"), "batch")
+    assert df.loc[0, "blended_category"] == "Shopping"

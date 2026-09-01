@@ -37,6 +37,7 @@ class CanonicalTransaction(BaseModel):
     amount: Decimal
     simplifi_category: str = ""
     simplifi_category_mapped: str = ""
+    blended_category: str = ""
     spending_class: str = ""
     notes: str = ""
     file_source: str
@@ -103,6 +104,7 @@ TRANSACTION_COLUMNS = [
     "amount",
     "simplifi_category",
     "simplifi_category_mapped",
+    "blended_category",
     "spending_class",
     "notes",
     "file_source",
