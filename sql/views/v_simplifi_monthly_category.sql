@@ -10,19 +10,11 @@
 -- non-itemized spend at a known merchant -- Costco gas, a Target run with no
 -- item export -- can still be drilled into by retailer during validation.
 CREATE OR REPLACE VIEW `spending-pipeline.finance_pipeline.v_simplifi_monthly_category` AS
-WITH matched AS (
-  SELECT DISTINCT matched_simplifi_transaction_id AS transaction_id
-  FROM `spending-pipeline.finance_pipeline.retail_items`
-  WHERE matched_simplifi_transaction_id IS NOT NULL AND matched_simplifi_transaction_id != ''
-)
 SELECT
-  FORMAT_DATE('%Y-%m', DATE(posted_date)) AS month,
-  merchant_normalized AS retailer,
-  blended_category AS category,
+  month,
+  retailer,
+  category,
   'simplifi' AS source,
-  SUM(-amount) AS amount
-FROM `spending-pipeline.finance_pipeline.transactions`
-WHERE amount < 0
-  AND spending_class NOT IN ('Transfer', 'Income', 'Excluded', 'Tax', 'Savings')
-  AND transaction_id NOT IN (SELECT transaction_id FROM matched)
+  SUM(amount) AS amount
+FROM `spending-pipeline.finance_pipeline.v_unmatched_simplifi_spend`
 GROUP BY month, retailer, category

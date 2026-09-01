@@ -19,3 +19,10 @@ def test_simplifi_category_migration_and_spending_class():
 def test_simplifi_blended_category_passes_through_when_unmapped():
     df = simplifi.load(Path("tests/fixtures/simplifi.csv"), "batch")
     assert df.loc[0, "blended_category"] == "Shopping"
+
+
+def test_simplifi_blended_category_renames_through_the_mapped_category():
+    df = simplifi.load(Path("tests/fixtures/simplifi.csv"), "batch")
+    # raw category "Groceries" -> simplifi_category_mapped "02 Groceries and Foods"
+    # (config/simplifi_category_mapping.yaml) -> blended_category "Groceries".
+    assert df.loc[2, "blended_category"] == "Groceries"

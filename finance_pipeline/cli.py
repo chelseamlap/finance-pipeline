@@ -52,17 +52,19 @@ def ingest(
 def run_month(
     month: str = typer.Option(..., "--month"),
     check_source_dates: bool = typer.Option(True, "--check-source-dates/--skip-source-date-check", help="Print raw source max dates before loading sources."),
-    bigquery_project: Optional[str] = typer.Option(None, "--bigquery-project", help="Google Cloud project for BigQuery analytics tables."),
-    bigquery_dataset: str = typer.Option("finance_pipeline", "--bigquery-dataset", help="BigQuery dataset for canonical tables."),
-    bigquery_location: Optional[str] = typer.Option(None, "--bigquery-location", help="Optional BigQuery dataset location."),
 ) -> None:
+    # Deliberately no --bigquery-project here: BigQuery's snapshot tables
+    # (items_needing_review, unmatched_*, reconciliation_*, category_rule_coverage)
+    # are WRITE_TRUNCATE and assume a full-history run-period load. Pointing a
+    # single-month run at them would replace the full history with just that month.
+    # Use run-period for BigQuery loads, even for a one-month range.
     _run_period(
         months=[month],
         import_batch_prefix="month",
         check_source_dates=check_source_dates,
-        bigquery_project=bigquery_project,
-        bigquery_dataset=bigquery_dataset,
-        bigquery_location=bigquery_location,
+        bigquery_project=None,
+        bigquery_dataset="finance_pipeline",
+        bigquery_location=None,
         write_review=False,
     )
     typer.echo(f"Wrote monthly outputs to data/processed/{month}")

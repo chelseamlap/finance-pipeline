@@ -8,6 +8,7 @@ cd "$(dirname "$0")"
 
 VIEWS=(
   v_item_level_monthly_category
+  v_unmatched_simplifi_spend
   v_simplifi_monthly_category
   v_blended_monthly_category
   v_monthly_category_totals

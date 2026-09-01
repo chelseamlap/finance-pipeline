@@ -3,12 +3,7 @@
 -- connectors -> BigQuery) and sort/filter by amount within a category to spot
 -- miscategorization by eye.
 CREATE OR REPLACE VIEW `spending-pipeline.finance_pipeline.v_spend_detail` AS
-WITH matched AS (
-  SELECT DISTINCT matched_simplifi_transaction_id AS transaction_id
-  FROM `spending-pipeline.finance_pipeline.retail_items`
-  WHERE matched_simplifi_transaction_id IS NOT NULL AND matched_simplifi_transaction_id != ''
-),
-item_rows AS (
+WITH item_rows AS (
   SELECT
     FORMAT_DATE('%Y-%m', DATE(transaction_date)) AS month,
     DATE(transaction_date) AS date,
@@ -26,21 +21,18 @@ item_rows AS (
 ),
 simplifi_rows AS (
   SELECT
-    FORMAT_DATE('%Y-%m', DATE(posted_date)) AS month,
-    DATE(posted_date) AS date,
+    month,
+    date,
     'simplifi' AS source,
-    merchant_normalized AS retailer,
-    blended_category AS category,
+    retailer,
+    category,
     spending_class,
-    merchant_raw AS description,
-    -amount AS amount,
+    description,
+    amount,
     CAST(NULL AS STRING) AS category_confidence,
-    simplifi_category AS category_signal,
-    transaction_id AS record_id
-  FROM `spending-pipeline.finance_pipeline.transactions`
-  WHERE amount < 0
-    AND spending_class NOT IN ('Transfer', 'Income', 'Tax', 'Savings', 'Excluded')
-    AND transaction_id NOT IN (SELECT transaction_id FROM matched)
+    category_signal,
+    record_id
+  FROM `spending-pipeline.finance_pipeline.v_unmatched_simplifi_spend`
 )
 SELECT * FROM item_rows
 UNION ALL
