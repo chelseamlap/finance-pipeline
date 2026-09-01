@@ -54,7 +54,7 @@ A `/code-review` pass on the above caught three more real issues, all fixed and 
 
 ## Known Open Items
 
-- **$297.55 / 164 rows still in `Unknown_Review`** after the `unknown-category-review` pass — includes deodorant/antiperspirant (no `kw:health` coverage yet) and a handful of Costco toy-department items (X-Shot, Monopoly, a "Ninjacto" appliance) deliberately left unguessed rather than overfit to single SKU codes.
+- **$488.35 / 163 rows in `Unknown_Review`** as of 2026-08-31 (grew from new transactions added since the last pass, partly offset by a manual fix that day: `bandage`/`laxative`/`constipation relief`/`acne treatment`/`nasal spray`/`congestion relief` added to `kw:health`, `vegetable oil spread`/`margarine` added to `kw:grocery` — cleared 5 flagged items plus 2 bonus matches). Still includes deodorant/antiperspirant (no `kw:health` coverage yet) and a handful of Costco toy-department items (X-Shot, Monopoly, a "Ninjacto" appliance) deliberately left unguessed rather than overfit to single SKU codes.
 - **Target reconciliation is outside the 5% target for some recent months** (July 2026: 12% gap, driven by 1 unmatched retail order — `unmatched_retail_orders.csv`/`reconciliation_detail.csv` for that month have the specifics). Amazon and Costco are both comfortably within threshold. Worth a look next time reconciliation gets attention, not urgent.
 - **`Kids:Kids Activities`, `Fitness:Gym`, `Financial`, `Auto & Transport:Tolls`** are still sitting in the generic `Review` spending class — small dollar amounts, genuinely ambiguous whether they're `Variable Required` or `Sinking`, left for a real decision rather than a guess.
 - **CSV-only option for sharing with FIL** — explicitly deferred, not started.

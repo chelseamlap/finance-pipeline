@@ -70,7 +70,7 @@ search_overrides:
 keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
-    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke"]
+    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke", "vegetable oil spread", "margarine"]
     exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
@@ -86,7 +86,7 @@ keyword_rules:
     keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels"]
   - rule_id: kw:health
     category: Health_Personal_Care
-    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid"]
+    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid", "bandage", "bandages", "laxative", "constipation relief", "acne treatment", "nasal spray", "congestion relief"]
   - rule_id: kw:home_improvement
     category: Home_Improvement
     keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "grill brush", "hooks rail", "wall mounted", "shed", "deckbox", "planter", "weedclear"]
