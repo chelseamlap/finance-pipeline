@@ -70,20 +70,21 @@ search_overrides:
 keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
-    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke", "vegetable oil spread", "margarine"]
-    exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv"]
+    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke", "vegetable oil spread", "margarine", "veggie straws", "mushroom", "mushrooms", "pizza"]
+    exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv", "fruit of the loom", "briefs", "windbreaker", "coffee maker", "coffee pot"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
     keywords: ["restaurant", "pizza", "takeout", "doordash", "ubereats"]
+    exclude_keywords: ["frozen"]
   - rule_id: kw:alcohol
     category: Alcohol
     keywords: ["wine", "beer", "liquor", "vodka", "whiskey", "tequila", "cabernet", "sauvignon", "prosecco"]
   - rule_id: kw:household
     category: Household
-    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors", "tumbler", "mug", "skillet", "mop"]
+    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors", "tumbler", "mug", "skillet", "mop", "coffee maker", "carafe"]
   - rule_id: kw:kids
     category: Kids
-    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels"]
+    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels", "craft kit", "paint your own"]
   - rule_id: kw:health
     category: Health_Personal_Care
     keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid", "bandage", "bandages", "laxative", "constipation relief", "acne treatment", "nasal spray", "congestion relief"]
@@ -92,7 +93,7 @@ keyword_rules:
     keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "grill brush", "hooks rail", "wall mounted", "shed", "deckbox", "planter", "weedclear"]
   - rule_id: kw:clothing
     category: Clothing
-    keywords: ["shirt", "shirts", "pants", "socks", "shoes", "sandals", "jacket", "bra", "bras", "blouse", "blouses", "jeans", "underwear", "sleeve", "tops", "leggings", "joggers", "maternity", "clothing", "shorts", "vest"]
+    keywords: ["shirt", "shirts", "pants", "socks", "shoes", "sandals", "jacket", "bra", "bras", "blouse", "blouses", "jeans", "underwear", "sleeve", "tops", "leggings", "joggers", "maternity", "clothing", "shorts", "vest", "briefs"]
   - rule_id: kw:pets
     category: Pets
     keywords: ["dog food", "cat food", "pet", "litter"]

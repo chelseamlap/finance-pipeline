@@ -30,11 +30,21 @@ administrative:
   State Tax: Tax
   Taxes: Tax
   College Savings: Savings
-  Uncategorized: Excluded
-  NA: Excluded
+  # Uncategorized/NA used to map to Excluded, silently dropping any real spend a
+  # transaction never got a real category for -- caught a real $663.99 Quince
+  # purchase hidden this way. Route to Review instead so it surfaces for a human
+  # decision rather than disappearing from every total.
+  Uncategorized: Review
+  NA: Review
   Cash & ATM: Excluded
   Fees & Charges: Excluded
   Charity & Donations: Excluded
+  # Bare top-level categories with no subcategory fall back here instead of
+  # Review, matching the classification their own subcategories already use most
+  # often (Kids retail purchases are Variable Required; Auto & Transport's bare
+  # rows are dominated by registration/DMV/service charges, already Sinking).
+  Kids: Variable Required
+  Auto & Transport: Sinking
 
 retail_categories:
   Groceries: Variable Required
