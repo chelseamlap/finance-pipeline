@@ -10,6 +10,11 @@
 "Not home cooked foods": Restaurants_Takeout
 "Restaurants and Takeout": Restaurants_Takeout
 "Alcohol and bars": Alcohol
+# Renamed from "Alcohol and bars" in Simplifi (2026-09) to separate store-bought
+# alcohol from bar/restaurant tabs, which now live under "Not home cooked foods"
+# instead -- that category's own top-level rename above already covers them
+# regardless of subcategory, so no change was needed on that side.
+"Retail Alcohol": Alcohol
 "Kids Fixed": Kids
 "Health and medical": Health_Personal_Care
 "Personal Care": Health_Personal_Care
