@@ -1,4 +1,4 @@
-from finance_pipeline.normalize import blended_category_for_simplifi
+from finance_pipeline.normalize import blended_category_for_simplifi, map_simplifi_category, spending_class_for_category
 
 
 def test_blended_category_renames_overlapping_categories():
@@ -41,3 +41,22 @@ def test_blended_category_passes_through_unmapped_categories():
 def test_blended_category_handles_blank_input():
     assert blended_category_for_simplifi("") == ""
     assert blended_category_for_simplifi(None) == ""
+
+
+def test_sinking_categories_keep_their_own_label_not_the_spending_class_name():
+    # simplifi_category_mapping.yaml used to map these to "05 Sinking:<label>" --
+    # blended_category_for_simplifi takes everything before the first colon, so
+    # the real label ("Auto Registration", "Education", "Tuition") was silently
+    # discarded and every one of these showed up as a bare "Sinking" category
+    # instead of its own name. spending_class must still resolve to Sinking via
+    # the "05" prefix either way.
+    for raw, expected_label in [
+        ("Auto & Transport:Registration", "Auto Registration"),
+        ("Auto & Transport:Service & Parts", "Auto Service & Parts"),
+        ("Ski Passes", "Ski Passes"),
+        ("Education", "Education"),
+        ("Education:Tuition", "Tuition"),
+    ]:
+        mapped = map_simplifi_category(raw)
+        assert blended_category_for_simplifi(mapped) == expected_label
+        assert spending_class_for_category(mapped) == "Sinking"
