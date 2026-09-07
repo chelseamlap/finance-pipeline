@@ -71,7 +71,7 @@ keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
     keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke", "vegetable oil spread", "margarine", "veggie straws", "mushroom", "mushrooms", "pizza"]
-    exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv", "fruit of the loom", "briefs", "windbreaker", "coffee maker", "coffee pot"]
+    exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv", "fruit of the loom", "briefs", "windbreaker", "coffee maker", "coffee pot", "mondo llama", "fruit clips"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
     keywords: ["restaurant", "pizza", "takeout", "doordash", "ubereats"]
@@ -84,7 +84,7 @@ keyword_rules:
     keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors", "tumbler", "mug", "skillet", "mop", "coffee maker", "carafe"]
   - rule_id: kw:kids
     category: Kids
-    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels", "craft kit", "paint your own"]
+    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels", "craft kit", "paint your own", "mondo llama"]
   - rule_id: kw:health
     category: Health_Personal_Care
     keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid", "bandage", "bandages", "laxative", "constipation relief", "acne treatment", "nasal spray", "congestion relief"]
