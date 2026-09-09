@@ -16,6 +16,7 @@ VIEWS=(
   v_monthly_spending_class_pivot
   v_spend_detail
   v_category_mapping
+  v_monthly_budget_group_totals
 )
 
 for view in "${VIEWS[@]}"; do
