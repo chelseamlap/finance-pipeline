@@ -11,7 +11,7 @@ from finance_pipeline.identity import DuplicateOrdinalTracker, infer_source_owne
 from finance_pipeline.loaders.generic import reject_rows, source_files
 from finance_pipeline.loaders.retail_common import derive_line_subtotal
 from finance_pipeline.models import CanonicalRetailItem, money
-from finance_pipeline.normalize import clean_string, normalize_merchant, normalize_text, parse_date
+from finance_pipeline.normalize import clean_string, load_yaml, normalize_merchant, normalize_text, parse_date
 from finance_pipeline.reconcile import allocate_order_amounts
 
 LOGGER = logging.getLogger(__name__)
@@ -164,13 +164,18 @@ def _json_item_row(order: dict, item: dict, file: Path) -> dict:
     }
 
 
+def _zero_value_skus() -> set[str]:
+    return {clean_string(sku) for sku in load_yaml("merchant_rules.yaml").get("zero_value_skus", [])}
+
+
 def _canonical_rows(rows: list[dict], import_batch_id: str) -> list[dict]:
     canonical = []
     rejected = []
     ordinals = DuplicateOrdinalTracker()
+    zero_value_skus = _zero_value_skus()
     for row in rows:
         try:
-            canonical.append(_canonical_item(row, import_batch_id, ordinals))
+            canonical.append(_canonical_item(row, import_batch_id, ordinals, zero_value_skus))
         except Exception as exc:
             rejected.append({**row, "reject_reason": str(exc)})
     if rejected:
@@ -178,7 +183,7 @@ def _canonical_rows(rows: list[dict], import_batch_id: str) -> list[dict]:
     return canonical
 
 
-def _canonical_item(row: dict, import_batch_id: str, ordinals: DuplicateOrdinalTracker) -> dict:
+def _canonical_item(row: dict, import_batch_id: str, ordinals: DuplicateOrdinalTracker, zero_value_skus: set[str]) -> dict:
     retailer = clean_string(row.get("retailer")).lower()
     if retailer not in {"target", "costco"}:
         raise ValueError(f"unsupported retailer: {retailer}")
@@ -191,6 +196,10 @@ def _canonical_item(row: dict, import_batch_id: str, ordinals: DuplicateOrdinalT
     unit_price = money(row.get("unit_price")) if clean_string(row.get("unit_price")) else Decimal("0")
     data = {"item_subtotal": row.get("line_total"), "quantity": quantity, "unit_price": unit_price}
     raw_subtotal, subtotal, subtotal_note = derive_line_subtotal(data, quantity, unit_price)
+    sku = clean_string(row.get("sku"))
+    if sku in zero_value_skus:
+        subtotal = Decimal("0.00")
+        subtotal_note = "; ".join(part for part in [subtotal_note, "zero_value_sku_promotional_reward"] if part)
     source_owner = clean_string(row.get("_source_owner")) or _source_owner_from_account_hint(row.get("account_hint"))
     base = {
         "source_adapter": SOURCE_ADAPTER,
@@ -203,7 +212,7 @@ def _canonical_item(row: dict, import_batch_id: str, ordinals: DuplicateOrdinalT
         "merchant_normalized": normalize_merchant(retailer),
         "item_description_raw": description,
         "item_description_normalized": normalize_text(description),
-        "sku": clean_string(row.get("sku")),
+        "sku": sku,
         "asin": "",
         "upc": "",
         "quantity": quantity,

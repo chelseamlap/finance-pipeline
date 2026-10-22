@@ -1,210 +1,59 @@
 # Progress
 
-Last updated: 2026-05-22
+Last updated: 2026-08-20
 
 ## Current State
 
-The finance pipeline is a working local-first CLI for parsing Simplifi transactions and item-level retail exports, reconciling retail orders back to posted Simplifi transactions, and producing month-scoped outputs under `data/processed/YYYY-MM/`.
+The pipeline is past first-run and running against real household data (2025-01 through 2026-08). Three sources, all plain CSV: Simplifi (manual export), `store-receipt-extract` (homegrown Chrome extension, Target + Costco), Amazon Order History Reporter (browser extension). See `README.md` for the full setup and monthly workflow, and `docs/adding-a-source.md` for wiring in a new source (Walmart is the anticipated next one, not yet built).
 
-Active checkout:
+Google Cloud project: `spending-pipeline`. Auth is personal `gcloud`/Application Default Credentials, not a service account — no Firestore, no saved-mapping persistence layer. `config/merchant_rules.yaml` is the entire categorization mechanism.
 
-```text
-/Users/chelsea.lapepeikis/Desktop/personal-repo/finance-pipeline
-```
+BigQuery (`spending-pipeline.finance_pipeline`) is the durable, queryable store. Seven views: `v_item_level_monthly_category`, `v_simplifi_monthly_category`, `v_blended_monthly_category`, `v_monthly_category_totals` (by household category, monthly), `v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot` (by budget type, monthly), and `v_spend_detail` (row-level, not aggregated — connect directly in Google Sheets to eyeball categorization by sorting on amount). All three monthly rollups carry `retailer` (`NULL` for Simplifi-sourced rows) so they can be broken down per retailer, not just blended. Two skills in `.claude/skills/`: `categorization-quality` (read-only audit, dollar-ranked punch list) and `unknown-category-review` (LLM-assisted review of `Unknown_Review` items that writes confirmed fixes straight into `merchant_rules.yaml`).
 
-Remote:
+## Next Steps
 
-```text
-https://github.com/chelseamlap/finance-pipeline
-```
+**Reconciliation match-quality audit — picking this up next session.** Different axis from categorization: `matched_simplifi_transaction_id` pairs an item-level order with a Simplifi transaction using a date window (±5 days, Amazon gets an extended ±10-day fallback for orders ≥$10) plus amount tolerance ($0.03 accounting / $0.05 matching) — fuzzy enough that a close-but-wrong transaction could plausibly get matched instead of the right one, especially two same-week same-amount orders from the same retailer. Nothing currently checks whether a *correct* match is actually correct, only whether *some* match happened within tolerance.
 
-Google Cloud project:
+Sketch for a `reconciliation-quality` skill (sibling to `categorization-quality`, not a merge — reads `reconciliation_detail.csv` and the `matched_simplifi_transaction_id` linkage rather than the category files):
+- Flag matches sitting near the tolerance edge (`item_vs_simplifi_difference` close to $0.03/$0.05) rather than exact — those are the ones most likely to be a coincidental match, not a real one.
+- Flag the classic swap signature: two items/transactions in the same date window where each is individually within tolerance of the *other's* counterpart, not just its own.
+- For any retailer/week with more than one matched order, verify no other unmatched or differently-matched transaction in the same window would have been an equally good or better fit.
+- Same reporting discipline as the other two skills: dollar-ranked findings, never auto-fixes reconciliation config, human confirms before anything changes.
 
-```text
-spending-pipeline
-```
+## Recent Work (2026-08-19 through 2026-08-20)
 
-Local Google auth should use the service account key at:
+- Got Target, Costco, and Amazon item-level data flowing end to end alongside Simplifi; fixed a Target gift-card overcounting bug and an Amazon Google-Sheets footer-row crash.
+- Closed most of the `Unknown_Review` gap by adding `category_prefix_rules` that key off each retailer's own category taxonomy (Amazon's product categories, Costco's `category_label`) — this did more than keyword rules alone.
+- Found and fixed a real money-hiding bug in `spending_class_for_category()`: unmapped Simplifi categories defaulted to `Excluded` rather than `Review`, silently dropping ~$4,300 of real spend (daycare activities, ski passes, car repairs) from every total. Also caught and correctly excluded a $336K mortgage refinance transaction that the same fix would otherwise have swept into "spending."
+- Stood up BigQuery from scratch (`gcloud` install, auth, billing, dataset, the 4 views above). Along the way found and fixed a real bug in `BigQueryAnalyticsStore._json_ready`: pandas' newer string dtype silently reverts a mapped-in `None` back to `NaN` on column reassignment, which BigQuery's JSON parser rejects outright. Never caught before because this was the first real BigQuery run ever attempted on this codebase.
+- Removed OrderPro (all 4 retailer folders) and the Firestore-backed saved-mapping/state-persistence layer entirely — neither was in real use. Deleted ~4 loader modules, `mappings.py`, `storage/firestore_store.py`, `storage/memory_store.py`, and every CLI command/flag tied to them (`save-mapping`, `export-mappings`, `import-reviewed-mappings`, `accept/reject-mapping-candidate`, `--firestore-project`, `--mapping-csv`, `--persist-record-state`, `--queue-mapping-candidates`). Test suite went from 88 to 46 tests, all still real coverage of what's actually used.
+- Redesigned the spending-class taxonomy: renamed `One-Time Project` to `Sinking` (better matches a household that does frequent DIY/travel/repairs — none of it is actually one-time) and split `Auto & Transport` so routine gas stays `Variable Required` while `Service & Parts`/`Registration` route to `Sinking`. Also gave `Ski Passes`/`Education`/`Education:Tuition` a real home in `Sinking` instead of the generic `Review` default. Added `v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot` BigQuery views. Sinking now runs ~$3,400/month across the full history — a real, previously-invisible budget line.
+- Built `v_spend_detail` (row-level BigQuery view, meant for Google Sheets) and the `categorization-quality` skill for auditing both categorization layers. The view immediately caught two real bugs: a Costco `retailer_fallback` defaulting unlabeled general merchandise to `Groceries` ($1,276.59, incl. a $695.74 shed), and `kw:grocery`'s `"apple"` keyword catching Apple-brand electronics (~$429) instead of just the fruit before `kw:electronics` got a chance. Both fixed. `Unknown_Review` rose from $938.85 to $2,215.44 as a direct, honest result — these items now surface for review instead of guessing confidently wrong.
+- Built the `unknown-category-review` skill and ran it against that $2,215.44 backlog. Found the fixes were mostly *pattern* gaps, not one-offs — missing keywords (`shorts`/`vest` never in `kw:clothing`, `serum`/`sunscreen` never in `kw:health`, `shed`/`planter`/`weedclear` never in `kw:home_improvement`, `banana` singular but not plural in `kw:grocery`, etc.), so a handful of keyword-list additions cleared far more than their individual dollar amounts suggested. `Unknown_Review` dropped to $297.55 (164 rows). Also added `v_monthly_category_totals`/`v_monthly_spending_class_totals`/`v_monthly_spending_class_pivot`'s missing `retailer` column (dropped during aggregation, now preserved).
 
-```text
-/Users/chelsea.lapepeikis/.config/finance-pipeline/spending-pipeline-service-account.json
-```
+## Known Open Items
 
-Simplifi is the source of truth for money that actually hit the bank/card. Retail exports explain what was inside those transactions. The practical accuracy target is per store: each store's reconciled item total should be within 5% of that store's matched Simplifi total.
+- **$297.55 / 164 rows still in `Unknown_Review`** after the `unknown-category-review` pass — includes deodorant/antiperspirant (no `kw:health` coverage yet) and a handful of Costco toy-department items (X-Shot, Monopoly, a "Ninjacto" appliance) deliberately left unguessed rather than overfit to single SKU codes.
+- **Target reconciliation is outside the 5% target for some recent months** (July 2026: 12% gap, driven by 1 unmatched retail order — `unmatched_retail_orders.csv`/`reconciliation_detail.csv` for that month have the specifics). Amazon and Costco are both comfortably within threshold. Worth a look next time reconciliation gets attention, not urgent.
+- **`Kids:Kids Activities`, `Fitness:Gym`, `Financial`, `Auto & Transport:Tolls`** are still sitting in the generic `Review` spending class — small dollar amounts, genuinely ambiguous whether they're `Variable Required` or `Sinking`, left for a real decision rather than a guess.
+- **CSV-only option for sharing with FIL** — explicitly deferred, not started.
+- **Looker Studio dashboard** off the BigQuery views — recommended, not yet built.
 
-## Current Pushed Checkpoint
-
-Latest pushed code checkpoint before this documentation update:
-
-```text
-d386948 Improve monthly reconciliation accuracy
-```
-
-That batch included:
-
-- Separate transaction match tolerance (`$0.05`) from accounting mismatch tolerance (`$0.03`).
-- Amazon extended-date fallback for normal posting delays, with guardrails against suspicious small matches.
-- True zero-dollar orders marked `no_bank_transaction_expected` instead of unmatched.
-- Per-store reconciliation summary based on each store's matched Simplifi total, not a month-wide denominator.
-- Unmatched retail orders remain categorized and labeled, but are excluded from the reconciled store accuracy metric.
-- OrderPro duplicate collapse and placeholder handling for Costco return/odd rows.
-- Multi-quantity OrderPro line subtotal derivation with `item_subtotal_raw`, `line_subtotal_derived`, and `item_subtotal_derivation_notes`.
-- Sign-aware matching so retailer charges do not match Simplifi credits by absolute value.
-- Amazon Order History Reporter refunds emitted as separate negative adjustment rows instead of discounts on purchased items.
-
-## What Works Now
-
-- Simplifi transaction CSV ingestion.
-- OrderPro `.gsheet` ingestion through Google Sheets API.
-- OrderPro Target, Costco, and Amazon folders.
-- Amazon Order History Reporter order-level plus item-level exports in the same folder.
-- Costco, Target, and Amazon month runs for January and February 2026.
-- Month-scoped exports under `data/processed/YYYY-MM/`.
-- Firestore saved mappings and BigQuery analytics hooks when CLI flags are provided.
-- Layered deterministic categorization: saved mapping, exact identifiers, exact descriptions, search overrides, broad keywords, retailer fallback, then `Unknown_Review`.
-- Reconciliation files that keep Simplifi truth, item-derived totals, retailer/export totals, and mismatch diagnostics separate.
-
-## Latest Validation
-
-Test suite after the current reconciliation changes:
+## Where To Look
 
 ```text
-45 passed
+data/processed/runs/<run_id>/review/run_summary.csv           month-by-month health check
+data/processed/runs/<run_id>/review/category_review.csv       grouped category decisions needing a look
+data/processed/runs/<run_id>/review/reconciliation_review.csv order-level mismatches, sorted by priority
+data/processed/YYYY-MM/store_reconciliation_summary.csv       per-store accuracy vs. Simplifi
 ```
 
-January 2026 store reconciliation from `data/processed/2026-01/store_reconciliation_summary.csv`:
-
-```text
-retailer  matched_simplifi_total  reconciled_item_total  reconciled_gap  gap_pct  within_5_percent
-amazon    726.36                  762.54                 36.18           4.98%    True
-costco    640.49                  647.55                 7.06            1.10%    True
-target    343.01                  343.43                 0.42            0.12%    True
-```
-
-February 2026 store reconciliation from `data/processed/2026-02/store_reconciliation_summary.csv`:
-
-```text
-retailer  matched_simplifi_total  reconciled_item_total  reconciled_gap  gap_pct  within_5_percent
-amazon    238.74                  246.88                 8.14            3.41%    True
-costco    1034.80                 1026.37                -8.43           0.81%    True
-target    340.80                  353.70                 12.90           3.79%    True
-```
-
-Interpretation:
-
-- January and February are now within the per-store 5% threshold for Amazon, Costco, and Target.
-- Costco is much closer after duplicate collapse, placeholder handling, and store-level denominator changes.
-- Amazon Order History Reporter is favored over OrderPro for Amazon where available.
-- Amazon refunds are visible as separate negative adjustment rows, preserving both the original purchase and refund activity.
-- Unmatched retail rows are still categorized and reviewable, but they no longer make a store fail the reconciled accuracy metric if Simplifi has no matching posted transaction.
-
-## Important Output Files
-
-Open these first for any month:
-
-```text
-data/processed/YYYY-MM/store_reconciliation_summary.csv
-data/processed/YYYY-MM/reconciliation_summary.csv
-data/processed/YYYY-MM/reconciliation_detail.csv
-data/processed/YYYY-MM/unmatched_simplifi_transactions.csv
-data/processed/YYYY-MM/unmatched_retail_orders.csv
-data/processed/YYYY-MM/items_needing_review.csv
-data/processed/YYYY-MM/monthly_category_summary.csv
-```
-
-The key checkpoint file is `store_reconciliation_summary.csv`. The pass/fail field to watch is:
-
-```text
-within_5_percent_of_store_simplifi
-```
-
-Use `reconciliation_detail.csv` when a store misses the threshold. Use `items_needing_review.csv` for category cleanup and source-backed mismatch review.
-
-## Start Here In A New Chat
-
-1. Pull and confirm the tree:
+## Start Here In A New Session
 
 ```bash
-cd /Users/chelsea.lapepeikis/Desktop/personal-repo/finance-pipeline
-git pull --ff-only
 git status -sb
-```
-
-2. Activate the environment and run tests:
-
-```bash
 source .venv/bin/activate
-pytest -q
+pytest -q   # expect 46 passed
 ```
 
-Expected:
-
-```text
-45 passed
-```
-
-3. Inspect the known-good January and February store summaries:
-
-```bash
-cat data/processed/2026-01/store_reconciliation_summary.csv
-cat data/processed/2026-02/store_reconciliation_summary.csv
-```
-
-4. Run the next month when ready:
-
-```bash
-python -m finance_pipeline.cli run-month --month 2026-03
-python -m finance_pipeline.cli export --month 2026-03
-```
-
-5. If using Google state/analytics:
-
-```bash
-python -m finance_pipeline.cli run-month \
-  --month 2026-03 \
-  --firestore-project spending-pipeline \
-  --bigquery-project spending-pipeline \
-  --bigquery-dataset finance_pipeline
-```
-
-## Recommended Next Work
-
-1. Run March 2026, then April 2026, and check `store_reconciliation_summary.csv` for each store.
-
-2. Improve category coverage from `Unknown_Review` rows. Prefer stable rules in this order:
-
-- exact SKU/ASIN/UPC
-- exact normalized description
-- search override for specific phrase combinations
-- broad keyword only when safe
-
-3. Add or save mappings for recurring household items so categorization is not reinvented. Example:
-
-```bash
-python -m finance_pipeline.cli save-mapping \
-  --firestore-project spending-pipeline \
-  --type description \
-  --key "target:whole milk" \
-  --category Groceries
-```
-
-4. If a store falls outside 5%, inspect in this order:
-
-- `store_reconciliation_summary.csv` for the store-level gap
-- `reconciliation_detail.csv` filtered to that retailer
-- `unmatched_simplifi_transactions.csv` for Simplifi sync/import gaps
-- `unmatched_retail_orders.csv` for retail orders that did not post or did not match
-- `items_needing_review.csv` for category and mismatch notes
-
-5. Keep treating mismatches as evidence to explain, not numbers to force. Prefer explicit review labels, source-backed component logic, and visible adjustment rows over hidden balancing.
-
-## Design Principles To Preserve
-
-- Simplifi is the financial source of truth.
-- Retail exports are itemization evidence, not the bank ledger.
-- The 5% target is per store against that store's matched Simplifi total.
-- Unmatched retail can still be categorized, but it must remain visibly unmatched.
-- Amazon refunds are separate negative adjustment rows, not discounts against purchased item rows.
-- Full-year OrderPro files are expected and safe to rerun; stable identifiers and fingerprints prevent unchanged rows from becoming new work.
-- Saved mappings should always beat broad category rules and any future LLM categorization.
-- Do not commit raw exports, processed household data, rejected rows, or credentials.
+Then run the normal monthly workflow from `README.md`.

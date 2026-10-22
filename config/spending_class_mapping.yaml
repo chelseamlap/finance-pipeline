@@ -3,12 +3,13 @@ prefixes:
   "02": Variable Required
   "03": Discretionary
   "04": Reimbursable
-  "05": One-Time Project
+  "05": Sinking
 
 administrative:
   Transfer: Transfer
   Credit Card Payment: Transfer
   Balance Adjustment: Transfer
+  Loans: Transfer
   360 Checking: Excluded
   Chase Freedom: Excluded
   Joint WROS - TOD: Excluded
@@ -24,8 +25,10 @@ administrative:
   Interest Earned: Income
   On-Call Pay: Income
   Other Income: Income
+  Parent gift: Income
   Federal Tax: Tax
   State Tax: Tax
+  Taxes: Tax
   College Savings: Savings
   Uncategorized: Excluded
   NA: Excluded
@@ -40,12 +43,14 @@ retail_categories:
   Household: Variable Required
   Kids: Variable Required
   Health_Personal_Care: Variable Required
-  Home_Improvement: One-Time Project
+  Home_Improvement: Sinking
   Clothing: Discretionary
   Pets: Variable Required
-  Gifts: One-Time Project
+  Gifts: Sinking
   Electronics: Discretionary
   Subscriptions: Fixed Required
   Gas_Auto: Variable Required
-  Travel: One-Time Project
+  Travel: Sinking
+  Books: Discretionary
+  Entertainment_Other: Discretionary
   Unknown_Review: Review

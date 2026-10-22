@@ -27,7 +27,7 @@ def collect_source_max_dates(root: Path = Path(".")) -> list[SourceDateRecord]:
     records: list[SourceDateRecord] = []
     for source, meta in registry().items():
         default_path = root / Path(meta["default_path"])
-        folders = _source_folders(source, default_path)
+        folders = _source_folders(default_path)
         if not folders:
             records.append(
                 SourceDateRecord(
@@ -45,13 +45,9 @@ def collect_source_max_dates(root: Path = Path(".")) -> list[SourceDateRecord]:
     return records
 
 
-def _source_folders(source: str, default_path: Path) -> list[Path]:
+def _source_folders(default_path: Path) -> list[Path]:
     if not default_path.exists():
         return []
-    if default_path.is_file():
-        return [default_path]
-    if source == "orderpro":
-        return sorted(path for path in default_path.iterdir() if path.is_dir())
     return [default_path]
 
 
@@ -141,8 +137,6 @@ def max_date_for_file(source: str, file: Path) -> tuple[date | None, int, str]:
 def _alias_groups(source: str) -> tuple[str, ...]:
     if source == "simplifi":
         return ("simplifi",)
-    if source == "orderpro":
-        return ("orderpro_orders", "orderpro_items", "retail_item")
     if source == "store_receipt_extract":
         return ("store_receipt_extract_orders", "store_receipt_extract_items", "retail_item")
     return ("retail_item",)

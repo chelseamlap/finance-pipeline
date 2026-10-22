@@ -76,7 +76,8 @@ def spending_class_for_category(category: object) -> str:
     if prefix in mapping.get("prefixes", {}):
         return mapping["prefixes"][prefix]
     root = text.split(":", 1)[0]
-    return mapping.get("administrative", {}).get(text, mapping.get("administrative", {}).get(root, "Excluded"))
+    default = mapping.get("administrative", {}).get(root, "Review")
+    return mapping.get("administrative", {}).get(text, default)
 
 
 def spending_class_for_retail_category(category: object) -> str:

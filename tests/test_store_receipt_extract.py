@@ -213,3 +213,28 @@ def test_store_receipt_extract_source_date_reads_ordered_at(tmp_path):
     assert max_date.isoformat() == "2026-05-20"
     assert dated_rows == 1
     assert status == "ok"
+
+
+def test_store_receipt_extract_item_ids_are_stable_when_file_order_changes(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    orders = (
+        "retailer,order_id,account_hint,ordered_at,total,subtotal,tax,shipping,fulfillment_type,item_count\n"
+        "target,T-1,chelsea@example.com,2026-05-20T10:00:00Z,3.79,3.79,0,0,ShipToHome,1\n"
+    )
+    items = (
+        "retailer,order_id,line_index,sku,name,quantity,unit_price,line_total,category_native\n"
+        "target,T-1,0,11111111,Whole Milk,1,3.79,3.79,058\n"
+    )
+    (first / "orders_target.csv").write_text(orders)
+    (first / "order_items_target.csv").write_text(items)
+    (second / "order_items_target.csv").write_text(items)
+    (second / "orders_target.csv").write_text(orders)
+
+    first_df = store_receipt_extract.load(first, "batch-a")
+    second_df = store_receipt_extract.load(second, "batch-b")
+
+    assert sorted(first_df["item_id"]) == sorted(second_df["item_id"])
+    assert first_df["row_fingerprint"].notna().all()

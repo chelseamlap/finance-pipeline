@@ -15,3 +15,7 @@ data/raw/**/*
 .idea/
 .vscode/
 *.swp
+
+# Claude Code local runtime state (machine-specific, not shared)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

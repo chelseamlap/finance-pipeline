@@ -86,7 +86,7 @@ def test_category_review_aggregates_repeated_items():
                 "household_category": "Unknown_Review",
                 "needs_review": True,
                 "review_reason": "unknown category",
-                "source_adapter": "orderpro",
+                "source_adapter": "store_receipt_extract",
             },
             {
                 "item_id": "i2",
@@ -99,7 +99,7 @@ def test_category_review_aggregates_repeated_items():
                 "household_category": "Unknown_Review",
                 "needs_review": True,
                 "review_reason": "unknown category",
-                "source_adapter": "orderpro",
+                "source_adapter": "store_receipt_extract",
             },
         ]
     )
