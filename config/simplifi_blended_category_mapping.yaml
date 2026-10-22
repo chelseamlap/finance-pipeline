@@ -35,3 +35,20 @@
 # without this the view CASE statement used to leave it as a standalone "Costco"
 # bucket instead of folding it into real household spend.
 "Household Operations": Household
+# The pre-refinance mortgage payment (Jan 2022 - Nov 2023, ~$3,300/month, merchant
+# literally says "Loan Payment Tfr To Monthly Mortgage Tran") under its old Simplifi
+# category name, before "Mortgage and Escrow" existed -- confirmed zero month overlap
+# between the two, so this is the same real expense continuing one trend line, not a
+# double-count. The ~$46 of unrelated "Financial:Life Insurance"/"quantechdat" rows
+# also sharing this root fold in here too -- an accepted, immaterial tradeoff.
+"Financial": Mortgage and Escrow
+# Simplifi never auto-categorized these at all (shows as a blank "—" category) --
+# mostly small recurring Apple charges plus a few one-off retailers. Groups with the
+# existing "Uncategorized" bucket instead of a cryptic em-dash; doesn't fix the
+# underlying lack of a real category, which has to happen in Simplifi itself.
+"—": Uncategorized
+# One-off Simplifi data-entry glitch: a single real Kid Logic Learning (daycare)
+# transaction has the bank account's name selected as its category instead of a
+# real one. The $1,650 belongs with Childcare, not standing alone under an account
+# name that looks like spend-category noise.
+"NEFCU payment account": Childcare

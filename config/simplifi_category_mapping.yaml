@@ -11,6 +11,16 @@
 "Auto & Transport:Registration": "05 Auto Registration"
 "Auto & Transport:Service & Parts": "05 Auto Service & Parts"
 "Auto & Transport:Maintenance": "05 Auto Maintenance"
+# Routes to "05" (Sinking) and, after the leading digits strip in
+# blended_category_for_simplifi, lands on the exact string "Home Improvement"
+# -- already an item-level household_category, so this single line both fixes
+# the spending_class (was Variable Required via the raw "02" prefix, conflicting
+# with item-level Home_Improvement's Sinking) and blends the two sides
+# together, with no changes needed anywhere else. Key must be the literal raw
+# string Simplifi exports -- this one already comes with its own "02 " prefix
+# baked in at the source (unlike most other raw categories here), map_simplifi_
+# category() looks up the unmodified raw value verbatim.
+"02 Home improvement and maintenance": "05 Home Improvement"
 "Kids:Babysitter & Daycare": "01 Kids Fixed:Babysitter & Daycare"
 "Personal Care": "02 Personal Care"
 "Personal Care:Hair": "02 Personal Care:Hair"

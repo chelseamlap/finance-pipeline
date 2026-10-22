@@ -37,8 +37,31 @@ administrative:
   Uncategorized: Review
   NA: Review
   Cash & ATM: Excluded
-  Fees & Charges: Excluded
-  Charity & Donations: Excluded
+  # Was Excluded, silently dropping real spend -- audited 2026-10-22 and found
+  # it's 99% property tax (city of south burlington / escrow disbursement,
+  # ~$5,327 of the $5,377 total) with only ~$50 of genuinely fee-like charges
+  # (a wire fee, a trip fee) mixed in under the same bare category. Tax is the
+  # dollar-dominant truth; the ~$50 of real fees being labeled Tax too is an
+  # accepted, immaterial tradeoff rather than building merchant-level routing
+  # for $50.
+  Fees & Charges: Tax
+  # Subcategory override: credit card interest is a real discretionary cost
+  # (not a transfer, not literally a tax), so it needs its own exact-match
+  # entry -- otherwise it would inherit the "Fees & Charges" root default above.
+  Fees & Charges:Finance Charge: Discretionary
+  # Was Excluded, silently dropping real charitable giving (~$803) from every
+  # total. Discretionary -- it's real spend the household chooses to make.
+  Charity & Donations: Discretionary
+  # The pre-refinance mortgage payment (2022-2023) under its old Simplifi
+  # category name, before "Mortgage and Escrow" existed -- same real expense,
+  # just an old label. See simplifi_blended_category_mapping.yaml for the
+  # matching household_category rename.
+  Financial: Fixed Required
+  # One-off Simplifi data-entry glitch: a single Kid Logic Learning (daycare)
+  # transaction has the bank account's name selected as its category instead
+  # of a real category. Routed as Fixed Required to match Childcare's actual
+  # spending_class rather than leaving it in the generic Review default.
+  NEFCU payment account: Fixed Required
   # Bare top-level categories with no subcategory fall back here instead of
   # Review, matching the classification their own subcategories already use most
   # often (Kids retail purchases are Variable Required; Auto & Transport's bare
