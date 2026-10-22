@@ -15,7 +15,12 @@
 # instead -- that category's own top-level rename above already covers them
 # regardless of subcategory, so no change was needed on that side.
 "Retail Alcohol": Alcohol
-"Kids Fixed": Kids
+# Deliberately NOT folded into Kids: daycare is a Fixed Required bill (~$70.8k of
+# the ~$79k that used to sit under "Kids"), not a discretionary/variable purchase
+# like item-level Kids retail (toys, clothes). Blending them hid that a family
+# looking at "Kids" spend was looking at 90% an uncontrollable fixed cost and only
+# 10% anything actually changeable. Childcare stands alone as its own category.
+"Kids Fixed": Childcare
 "Health and medical": Health_Personal_Care
 "Personal Care": Health_Personal_Care
 "Entertainment other": Entertainment_Other
