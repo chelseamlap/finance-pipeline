@@ -53,6 +53,11 @@ class BigQueryAnalyticsStore:
         return len(out)
 
     def _merge_dataframe(self, table_name: str, df: pd.DataFrame, key_column: str, run_id: str) -> int:
+        # Content-hashed key_column (transaction_id/item_id) means a source whose local
+        # export covers a narrower date range than before (e.g. Simplifi's "replace, don't
+        # accumulate" file only spanning the last 12 months) still only adds/updates rows
+        # it actually produced this run -- MERGE never deletes a target row just because
+        # this run's input didn't happen to include it.
         if df.empty:
             return 0
         out = _json_ready(df.copy(), run_id)
@@ -65,18 +70,34 @@ class BigQueryAnalyticsStore:
             write_disposition=self.bigquery.WriteDisposition.WRITE_TRUNCATE,
         )
         self.client.load_table_from_json(records, staging, job_config=job_config).result()
-        if not self._table_exists(target):
+        staging_table = self.client.get_table(staging)
+        columns = [field.name for field in staging_table.schema]
+        is_new_table = not self._table_exists(target)
+
+        if is_new_table:
             copy_job = self.client.copy_table(staging, target)
             copy_job.result()
+
+        self._ensure_tracking_columns(target)
+        self._sync_schema(target, staging_table.schema)
+
+        if is_new_table:
+            # Every row is genuinely new here, so backfilling both timestamps to now is
+            # accurate rather than a guess.
+            self.client.query(
+                f"UPDATE `{target}` SET first_seen_at = CURRENT_TIMESTAMP(), "
+                "updated_at = CURRENT_TIMESTAMP() WHERE TRUE"
+            ).result()
             self.client.delete_table(staging, not_found_ok=True)
             return len(out)
 
-        staging_table = self.client.get_table(staging)
-        columns = [field.name for field in staging_table.schema]
         update_cols = [col for col in columns if col != key_column]
         set_clause = ", ".join(f"T.`{col}` = S.`{col}`" for col in update_cols)
-        insert_cols = ", ".join(f"`{col}`" for col in columns)
-        insert_vals = ", ".join(f"S.`{col}`" for col in columns)
+        set_clause = f"{set_clause}, T.`updated_at` = CURRENT_TIMESTAMP()" if set_clause else "T.`updated_at` = CURRENT_TIMESTAMP()"
+        insert_cols = ", ".join(f"`{col}`" for col in [*columns, "first_seen_at", "updated_at"])
+        insert_vals = ", ".join(
+            [*(f"S.`{col}`" for col in columns), "CURRENT_TIMESTAMP()", "CURRENT_TIMESTAMP()"]
+        )
         query = f"""
         merge `{target}` T
         using `{staging}` S
@@ -87,6 +108,33 @@ class BigQueryAnalyticsStore:
         self.client.query(query).result()
         self.client.delete_table(staging, not_found_ok=True)
         return len(out)
+
+    def _ensure_tracking_columns(self, target: str) -> None:
+        # Idempotent: a no-op after the first call against a given table. Pre-existing
+        # rows (loaded before this column existed) keep first_seen_at/updated_at as NULL
+        # rather than a fabricated timestamp -- an honest "unknown," not a guess.
+        self.client.query(
+            f"ALTER TABLE `{target}` "
+            "ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP, "
+            "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"
+        ).result()
+
+    def _sync_schema(self, target: str, staging_schema) -> None:
+        # Auto-applies any column the incoming DataFrame has that the live table doesn't,
+        # so a new field no longer requires a manual ALTER TABLE before the next run.
+        target_table = self.client.get_table(target)
+        existing = {field.name for field in target_table.schema}
+        missing = [field for field in staging_schema if field.name not in existing]
+        if not missing:
+            return
+        # Force NULLABLE regardless of what autodetect inferred from this batch: BigQuery
+        # rejects ALTER TABLE ADD COLUMN with a REQUIRED field on a non-empty table, which
+        # autodetect can produce if every row in this run's batch happened to be non-null.
+        nullable_missing = [
+            self.bigquery.SchemaField(field.name, field.field_type, mode="NULLABLE") for field in missing
+        ]
+        target_table.schema = list(target_table.schema) + nullable_missing
+        self.client.update_table(target_table, ["schema"])
 
     def _ensure_dataset(self) -> None:
         dataset_id = f"{self.project}.{self.dataset}"

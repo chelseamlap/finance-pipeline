@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-08-31
+Last updated: 2026-10-22
 
 ## Current State
 
@@ -14,6 +14,8 @@ BigQuery (`spending-pipeline.finance_pipeline`) is the durable, queryable store.
 
 ## Next Steps
 
+**Amazon refund-order matching (code change, deferred).** Amazon Order History Reporter's order-level `refund` values are split into separate negative `<order_id>:refund` adjustment rows (see README's "Reconciliation" section), and every one of them currently lands in `Unknown_Review` (`source_category_raw = "refund-adjustment"`) because there's no rule that can know which category to credit — that depends on which item(s) in the same order the refund applies to, not a fixed mapping. As of 2026-10-22 this is -$778.43 across 14 rows, the single largest chunk of `Unknown_Review`. User decision (2026-10-22): implement real order_id-based lookup in `categorize.py` so a refund nets against whatever category its sibling items in the same order received, rather than adding a config-level rule. Not started — do this as an actual code change next, not a `merchant_rules.yaml` edit.
+
 **Reconciliation match-quality audit — picking this up next session.** Different axis from categorization: `matched_simplifi_transaction_id` pairs an item-level order with a Simplifi transaction using a date window (±5 days, Amazon gets an extended ±10-day fallback for orders ≥$10) plus amount tolerance ($0.03 accounting / $0.05 matching) — fuzzy enough that a close-but-wrong transaction could plausibly get matched instead of the right one, especially two same-week same-amount orders from the same retailer. Nothing currently checks whether a *correct* match is actually correct, only whether *some* match happened within tolerance.
 
 Sketch for a `reconciliation-quality` skill (sibling to `categorization-quality`, not a merge — reads `reconciliation_detail.csv` and the `matched_simplifi_transaction_id` linkage rather than the category files):
@@ -21,6 +23,20 @@ Sketch for a `reconciliation-quality` skill (sibling to `categorization-quality`
 - Flag the classic swap signature: two items/transactions in the same date window where each is individually within tolerance of the *other's* counterpart, not just its own.
 - For any retailer/week with more than one matched order, verify no other unmatched or differently-matched transaction in the same window would have been an equally good or better fit.
 - Same reporting discipline as the other two skills: dollar-ranked findings, never auto-fixes reconciliation config, human confirms before anything changes.
+
+## Recent Work (2026-10-22)
+
+Routine data refresh (new Simplifi export, new Target/Costco receipts) turned up a real money-doubling bug, fixed it, then ran a full `categorization-quality` audit and `unknown-category-review` pass.
+
+- **Found and fixed a real duplicate-counting bug**: `finance_pipeline/identity.py::retail_identity_parts` included `source_owner` (inferred from the export *filename*, via `infer_source_owner`) in the content-hash `item_id`. The newest Costco export happened to be named with a `-chelsea` suffix that no prior export had, so every historical Costco item hashed to a brand-new `item_id` and merged in as a duplicate row instead of matching the existing one — Costco's item total was silently doubled, $48,320.53 vs a real $24,365.57 (confirmed: 3,228 rows for only 1,717 distinct purchases). A smaller version of the same bug had separately inflated Target by $905.40 from overlapping old/new exports. Fixed by dropping `source_owner` from the identity hash entirely (it was never a stable purchase attribute, just filename metadata) — this required a one-time `TRUNCATE` + full reload of BigQuery `retail_items` (confirmed with user first) since the hash formula change meant old rows wouldn't merge-match new ones. Added `tests/test_identity.py`.
+- **`transactions`/`retail_items` BigQuery merges now track `first_seen_at`/`updated_at` timestamps** (set via the `MERGE` statement itself, not backfilled for pre-existing rows — those stay honestly `NULL`), and automatically `ALTER TABLE ... ADD COLUMN` for any new DataFrame column the live table doesn't have yet (closes the schema-evolution gap flagged on 2026-08-31). This was prompted by a Simplifi export that turned out to only cover the trailing 12 months rather than full history — confirmed the existing `MERGE`-based upsert already protects against data loss from a narrower export (it only adds/updates, never deletes), this just adds visibility into what changed when.
+- **`categorization-quality` audit + `unknown-category-review` pass**: `Unknown_Review` dropped from $1,819.46 (268 rows) to **$473.89 (191 rows)** via pattern-level `merchant_rules.yaml` fixes — `kw:electronics` was missing `ipad`/`iphone`/`macbook`/etc. (already excluded from `kw:grocery`'s apple-fruit guard but never given a positive home), `kw:health` was missing `deodorant`/`antiperspirant` (a known gap per the 2026-08-31 notes) plus a dozen pharmacy/cosmetics terms, `kw:grocery` was missing `soda`/`onion`/`pear`/etc., Costco's own `"38: Toys"` department label was never wired into `category_prefix_rules` unlike its other departments. Two real keyword collisions caught and avoided before shipping: a bare `microfiber` would have hijacked a hair-care towel from Health to Household, and `peach` would have hijacked a Gerber baby-food puree from Kids to Groceries — both required more specific phrasing instead. Also caught and fixed in the Excluded-bucket sanity check (not yet applied): `Charity & Donations` ($627.98) and `Fees & Charges`/`Finance Charge` ($260.17) are mapped to `Excluded` in `config/spending_class_mapping.yaml`, silently dropping real spend from every total — **not yet fixed, needs a decision** (see below).
+- Total item-level spend confirmed unchanged ($43,035.57) before and after the rule changes — only recategorized, nothing gained or lost.
+
+## Known Open Items (new, 2026-10-22)
+
+- **`Charity & Donations` and `Fees & Charges`/`Finance Charge` are mapped to `Excluded` in `config/spending_class_mapping.yaml`**, which should only hold true transfers/internal account moves. This silently drops ~$888 of real spend (charitable giving, credit card interest) from every spending total. Flagged during the 2026-10-22 audit, not yet fixed — needs a decision on which spending_class (`Discretionary`? `Review`?) each should route to.
+- **Target reconciliation accuracy wasn't re-checked after the Costco/Target dedup fix** — worth a quick look next time reconciliation gets attention, since the fix changed Target's item counts too.
 
 ## Recent Work (2026-08-31)
 

@@ -6,6 +6,12 @@ exact_identifiers:
     B0CHTKNWBL:
       category: Gifts
       rule_id: asin:B0CHTKNWBL
+    B0GFG96W9P:
+      category: Household
+      rule_id: asin:B0GFG96W9P
+    B0CDWK57PB:
+      category: Clothing
+      rule_id: asin:B0CDWK57PB
   sku:
     TGT-DIAPERS-1:
       category: Kids
@@ -16,6 +22,24 @@ exact_identifiers:
     "14713506":
       category: Gifts
       rule_id: sku:14713506
+    "79405897":
+      category: Kids
+      rule_id: sku:79405897
+    "89959978":
+      category: Kids
+      rule_id: sku:89959978
+    "81534578":
+      category: Kids
+      rule_id: sku:81534578
+    "94164437":
+      category: Kids
+      rule_id: sku:94164437
+    "94685906":
+      category: Household
+      rule_id: sku:94685906
+    "94685949":
+      category: Household
+      rule_id: sku:94685949
   upc:
     "0001111041700":
       category: Groceries
@@ -52,6 +76,9 @@ exact_descriptions:
   superman 2025 bonus x ray edition:
     category: Entertainment_Other
     rule_id: desc:amazon_video_superman_2025
+  pirate 39 s booty aged white cheddar and cheddar blast puffs 39 snack variety pack 11oz 18ct:
+    category: Groceries
+    rule_id: desc:pirates_booty
 
 search_overrides:
   - rule_id: override:la_roche_posay_skin_milk
@@ -70,7 +97,7 @@ search_overrides:
 keyword_rules:
   - rule_id: kw:grocery
     category: Groceries
-    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke", "vegetable oil spread", "margarine", "veggie straws", "mushroom", "mushrooms", "pizza"]
+    keywords: ["strawberries", "strawberry", "banana", "bananas", "blueberry", "blueberries", "milk", "eggs", "bread", "yogurt", "coffee", "cheese", "apple", "apples", "berries", "chicken", "beef", "broccoli", "beans", "carrots", "fruit", "cookies", "oreo", "cereal", "candy", "mints", "chocolate", "nut butter", "peanut butter", "nut bar", "larabar", "ice cream", "starbucks", "espresso", "gushers", "nutella", "tomato", "tomatoes", "diet coke", "vegetable oil spread", "margarine", "veggie straws", "mushroom", "mushrooms", "pizza", "soda", "sports drink", "tortilla chips", "pretzels", "onion", "onions", "pear", "pears"]
     exclude_keywords: ["magic keyboard", "magic trackpad", "magic mouse", "airpods", "magsafe", "macbook", "ipad", "iphone", "imac", "apple watch", "apple tv", "fruit of the loom", "briefs", "windbreaker", "coffee maker", "coffee pot", "mondo llama", "fruit clips"]
   - rule_id: kw:restaurant
     category: Restaurants_Takeout
@@ -81,28 +108,29 @@ keyword_rules:
     keywords: ["wine", "beer", "liquor", "vodka", "whiskey", "tequila", "cabernet", "sauvignon", "prosecco"]
   - rule_id: kw:household
     category: Household
-    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors", "tumbler", "mug", "skillet", "mop", "coffee maker", "carafe"]
+    keywords: ["paper towel", "toilet paper", "detergent", "trash bag", "dish tabs", "cleaner", "cleanser", "soap", "sponge", "scrub daddy", "baking soda", "microban", "bar keepers friend", "air freshener", "freshener", "storage", "basket", "curtain", "blackout", "shower curtain", "bath", "scissors", "tumbler", "mug", "skillet", "mop", "coffee maker", "carafe", "stain remover", "microfiber cleaning", "reed diffuser", "gel beads", "hook"]
   - rule_id: kw:kids
     category: Kids
-    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels", "craft kit", "paint your own", "mondo llama"]
+    keywords: ["diaper", "diapers", "pull-ups", "wipes", "formula", "toddler", "toddlers", "toy", "baby", "babies", "kids", "infant", "infants", "children", "bento box", "straw cup", "punch balloons", "headband", "ready or not", "child seat", "nursing pillow", "training wheels", "craft kit", "paint your own", "mondo llama", "pacifier", "sippy", "nursing nipple", "gripe water"]
   - rule_id: kw:health
     category: Health_Personal_Care
-    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid", "bandage", "bandages", "laxative", "constipation relief", "acne treatment", "nasal spray", "congestion relief"]
+    keywords: ["toothpaste", "toothbrush", "shampoo", "conditioner", "hair", "vitamin", "lotion", "medicine", "melatonin", "hydrogen peroxide", "clotrimazole", "antifungal", "pain relief", "fever", "dental", "serum", "sunscreen", "night cream", "first aid", "bandage", "bandages", "laxative", "constipation relief", "acne treatment", "nasal spray", "congestion relief", "deodorant", "antiperspirant", "face wash", "moisturizer", "mouthwash", "contact lens", "sinus rinse", "hand cream", "pregnancy test", "menstrual", "personal lube", "yeast infection", "witch hazel", "toothache", "nail polish", "blush", "cold pack"]
   - rule_id: kw:home_improvement
     category: Home_Improvement
-    keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "grill brush", "hooks rail", "wall mounted", "shed", "deckbox", "planter", "weedclear"]
+    keywords: ["paint", "screw", "hardware", "garden", "tool", "mouse killer", "ant bait", "roach killer", "grill brush", "hooks rail", "wall mounted", "shed", "deckbox", "planter", "weedclear"]
+    exclude_keywords: ["garden veggie"]
   - rule_id: kw:clothing
     category: Clothing
     keywords: ["shirt", "shirts", "pants", "socks", "shoes", "sandals", "jacket", "bra", "bras", "blouse", "blouses", "jeans", "underwear", "sleeve", "tops", "leggings", "joggers", "maternity", "clothing", "shorts", "vest", "briefs"]
   - rule_id: kw:pets
     category: Pets
-    keywords: ["dog food", "cat food", "pet", "litter"]
+    keywords: ["dog food", "cat food", "pet", "litter", "poop bags"]
   - rule_id: kw:gifts
     category: Gifts
     keywords: ["gift", "birthday", "wrapping"]
   - rule_id: kw:electronics
     category: Electronics
-    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount", "magic keyboard", "magic trackpad", "magic mouse"]
+    keywords: ["usb", "charger", "battery", "headphones", "cable", "airpods", "magsafe", "monitor arm", "desk mount", "magic keyboard", "magic trackpad", "magic mouse", "ipad", "iphone", "macbook", "imac", "apple watch", "apple tv"]
   - rule_id: kw:subscription
     category: Subscriptions
     keywords: ["subscription", "membership"]
@@ -152,6 +180,7 @@ category_prefix_rules:
   "Beer & Alcohol": Alcohol
   "Seasonal & Hardware": Home_Improvement
   "Membership & Services": Subscriptions
+  "Toys": Kids
 
 # Intentionally empty: a Costco retailer_fallback defaulting unlabeled items to
 # Groceries used to live here, but it silently miscategorized ~$1,277 of general
