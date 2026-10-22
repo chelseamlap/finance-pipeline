@@ -94,9 +94,10 @@ SELECT * FROM `spending-pipeline.finance_pipeline.v_monthly_spending_class_pivot
 
 `retailer` is populated from `merchant_normalized` on Simplifi-sourced rows (a card swipe at Costco for gas, a Target run with no item export, "king soopers", "comcast", whatever the merchant name normalizes to) and from the actual retailer on item-level rows — filter or group on it to drill into any of these by merchant. This is deliberately granular while categorization is still being validated; once the rules have settled, collapsing non-retail merchants back to `NULL` (or a coarser "card spend" bucket) is a reasonable follow-up.
 
-Two skills in `.claude/skills/` support ongoing categorization quality:
+Three skills in `.claude/skills/` support ongoing data quality:
 - `categorization-quality` — read-only audit procedure across both categorization layers; produces a dollar-ranked punch list, never edits config.
 - `unknown-category-review` — reviews `Unknown_Review` items with LLM judgment, proposes rule-level fixes (missing keywords, not just one-off matches), and — only on confirmation — writes them into `merchant_rules.yaml` directly, the same file a human would hand-edit. First run cut `Unknown_Review` from $2,215.44 to $297.55.
+- `reconciliation-quality` — a different axis from categorization: checks whether `matched_simplifi_transaction_id` pairings are actually *correct*, not just present within tolerance (tolerance-edge matches, swapped same-week same-amount orders, coverage gaps vs. real matching failures). Also checks that the local Simplifi export fully covers the history being audited before trusting anything else — a narrower export has, for real, silently blanked out previously-correct matches on rerun.
 
 For simple visuals on top of any of these, point Looker Studio at the views directly — no code needed.
 
