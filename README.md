@@ -52,7 +52,7 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-Expected test result is currently `46 passed`.
+Expected test result is currently `54 passed`.
 
 ## Google Cloud Setup
 
@@ -68,11 +68,12 @@ gcloud auth application-default login   # browser login, for the Python client l
 
 BigQuery requires a billing account attached to the project even to stay within the free tier (10GB storage / 1TB queries per month free — this dataset is a few MB, so expect $0/month in practice). Set one up once at `console.cloud.google.com/billing` and link it to `spending-pipeline` if `gcloud billing projects describe spending-pipeline` shows `billingEnabled: false`.
 
-Query views live in the `finance_pipeline` dataset:
+Query views live in the `finance_pipeline` dataset. Their definitions are checked into `sql/views/*.sql` — `sql/views/deploy.sh` (re)creates all of them in dependency order after any change:
 
 - `v_item_level_monthly_category` — Target/Costco/Amazon item-level detail by month/retailer/category.
-- `v_simplifi_monthly_category` — Simplifi spend, excluding anything already covered by item-level detail (no double-counting) and crosswalked onto the household category taxonomy.
+- `v_simplifi_monthly_category` — Simplifi spend, excluding anything already covered by item-level detail (no double-counting), with `blended_category` (computed in Python — see `finance_pipeline/normalize.py::blended_category_for_simplifi`) renaming only the categories that overlap with item-level purchases (groceries, restaurants, alcohol, etc.) so they roll up together. Everything else passes through as its own Simplifi category name (e.g. `Mortgage and Escrow` stays `Mortgage and Escrow`) — that's intentional.
 - `v_blended_monthly_category` — the two combined.
+- `v_category_mapping` — grouped from `retail_items` by `category_rule_id`/`category`/`merchant_normalized`/`item_description_normalized` with count and `$` total, sorted by `$` desc. QA surface for "what rule is putting real money in the wrong category" — cross-check the big rows against `config/merchant_rules.yaml` and edit there.
 - `v_monthly_category_totals` — monthly totals per household category; the one to query day-to-day for "how much did we spend on X", e.g.:
 
 ```sql
@@ -91,7 +92,7 @@ SELECT * FROM `spending-pipeline.finance_pipeline.v_monthly_spending_class_pivot
 
 `v_spend_detail` is the row-level counterpart to all of the above — one row per item or unmatched transaction (not aggregated to a month), with `category`, `spending_class`, `category_confidence`, `category_signal` (the rule id or raw Simplifi category that produced it), and `amount`. Connect it directly in Google Sheets (Data → Data connectors → BigQuery) and sort/filter by amount within a category to spot miscategorization by eye — this is what actually caught two real bugs during development: a Costco retailer-fallback rule defaulting unlabeled general merchandise to `Groceries` (a $695.74 shed among them), and an `apple` keyword rule catching Apple-brand electronics instead of just the fruit.
 
-`retailer` is `NULL` on Simplifi-sourced rows in every view above (there's no single retailer for a non-itemized transaction) but present and real for item-level rows — filter or group on it to break any of these down by Target/Costco/Amazon.
+`retailer` is populated from `merchant_normalized` on Simplifi-sourced rows (a card swipe at Costco for gas, a Target run with no item export, "king soopers", "comcast", whatever the merchant name normalizes to) and from the actual retailer on item-level rows — filter or group on it to drill into any of these by merchant. This is deliberately granular while categorization is still being validated; once the rules have settled, collapsing non-retail merchants back to `NULL` (or a coarser "card spend" bucket) is a reasonable follow-up.
 
 Two skills in `.claude/skills/` support ongoing categorization quality:
 - `categorization-quality` — read-only audit procedure across both categorization layers; produces a dollar-ranked punch list, never edits config.

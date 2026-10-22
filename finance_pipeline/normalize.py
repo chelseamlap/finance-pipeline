@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
@@ -17,6 +18,7 @@ def config_path(name: str) -> Path:
     return PACKAGE_ROOT / "config" / name
 
 
+@lru_cache(maxsize=None)
 def load_yaml(name: str) -> dict:
     with config_path(name).open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
@@ -65,6 +67,21 @@ def map_simplifi_category(category: object) -> str:
     raw = clean_string(category)
     mapping = load_yaml("simplifi_category_mapping.yaml")
     return mapping.get(raw, raw)
+
+
+def blended_category_for_simplifi(category_mapped: object) -> str:
+    text = clean_string(category_mapped)
+    if not text:
+        return ""
+    root = text.split(":", 1)[0]
+    label = re.sub(r"^\d+\s+", "", root).strip()
+    mapping = load_yaml("simplifi_blended_category_mapping.yaml")
+    # Case-insensitive: simplifi_category_mapping.yaml and raw Simplifi exports
+    # don't agree on capitalization for the same category (e.g. "02 Groceries and
+    # Foods" vs "02 Groceries and foods"), so an exact-case lookup here would
+    # silently miss the rename for one of the two spellings.
+    lowercase_mapping = {key.lower(): value for key, value in mapping.items()}
+    return lowercase_mapping.get(label.lower(), label)
 
 
 def spending_class_for_category(category: object) -> str:

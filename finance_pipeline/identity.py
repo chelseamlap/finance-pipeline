@@ -41,13 +41,18 @@ class DuplicateOrdinalTracker:
 
 
 def retail_identity_parts(row: dict) -> list[object]:
+    # source_owner is deliberately excluded: it's inferred from the export filename
+    # (infer_source_owner), not a stable attribute of the purchase. The same Costco
+    # order re-exported under a differently-named file (e.g. a "-chelsea" suffix
+    # added one run but absent before) would otherwise hash to a brand-new item_id
+    # and merge as a duplicate row instead of updating the existing one -- this is
+    # exactly what happened and doubled Costco's item-level total.
     item_key = clean_string(row.get("asin")) or clean_string(row.get("upc")) or clean_string(row.get("sku"))
     if not item_key:
         item_key = normalize_text(row.get("item_description_raw") or row.get("item_description_normalized"))
     return [
         "retail",
         clean_string(row.get("retailer")),
-        clean_string(row.get("source_owner")),
         clean_string(row.get("order_id")),
         clean_string(row.get("receipt_id")),
         item_key,
